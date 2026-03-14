@@ -9,7 +9,7 @@ if (!existsSync(DB_DIR)) {
   mkdirSync(DB_DIR, { recursive: true });
 }
 
-export const db = new Database(DB_PATH);
+export const db: InstanceType<typeof Database> = new Database(DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS sketches (

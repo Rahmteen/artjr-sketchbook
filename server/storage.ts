@@ -45,13 +45,13 @@ export function getStoragePath(storageKey: string): string {
 }
 
 /** Save file to disk (local) or Supabase bucket. Returns storageKey. */
-export function saveFile(buffer: Buffer, extension: string, mimeType?: string): string {
+export async function saveFile(buffer: Buffer, extension: string, mimeType?: string): Promise<string> {
   const ext = extension.startsWith('.') ? extension : `.${extension}`;
   const storageKey = `${uuidv4()}${ext}`;
 
   if (supabase) {
     const contentType = mimeType ?? 'application/octet-stream';
-    const { error } = supabase.storage.from(SUPABASE_BUCKET).upload(storageKey, buffer, {
+    const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(storageKey, buffer, {
       contentType,
       upsert: false,
     });
@@ -92,7 +92,7 @@ export async function getFileStream(storageKey: string): Promise<Readable | null
     if (error || !data?.signedUrl) return null;
     const response = await fetch(data.signedUrl);
     if (!response.ok || !response.body) return null;
-    return Readable.fromWeb(response.body as import('stream').WebReadableStream);
+    return Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
   }
   const path = getStoragePath(storageKey);
   if (!existsSync(path)) return null;

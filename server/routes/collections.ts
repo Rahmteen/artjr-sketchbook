@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db.js';
 import { createActivity } from '../activities.js';
 import { sketchRowToSketch } from '../map.js';
+import { strParam } from '../param.js';
 import type {
   CollectionRow,
   CollectionTierRow,
@@ -88,7 +89,7 @@ router.post('/', (req: Request, res: Response) => {
 
 // Get single collection with tiers
 router.get('/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
@@ -121,7 +122,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // Update collection name (tierLabels approach removed — use individual tier CRUD)
 router.patch('/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
@@ -161,7 +162,7 @@ router.patch('/:id', (req: Request, res: Response) => {
 
 // Delete collection
 router.delete('/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
@@ -176,7 +177,7 @@ router.delete('/:id', (req: Request, res: Response) => {
 
 // Get sketches in a collection (via join table)
 router.get('/:id/sketches', (req: Request, res: Response) => {
-  const collectionId = req.params.id;
+  const collectionId = strParam(req.params.id);
   const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
@@ -214,7 +215,7 @@ router.get('/:id/sketches', (req: Request, res: Response) => {
 
 // Add sketches to a collection
 router.post('/:id/sketches', (req: Request, res: Response) => {
-  const collectionId = req.params.id;
+  const collectionId = strParam(req.params.id);
   const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
@@ -257,7 +258,8 @@ router.post('/:id/sketches', (req: Request, res: Response) => {
 
 // Remove a sketch from a collection
 router.delete('/:id/sketches/:sketchId', (req: Request, res: Response) => {
-  const { id: collectionId, sketchId } = req.params;
+  const collectionId = strParam(req.params.id);
+  const sketchId = strParam(req.params.sketchId);
   db.prepare('DELETE FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').run(collectionId, sketchId);
   db.prepare('UPDATE collections SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), collectionId);
   res.status(204).send();
@@ -265,7 +267,8 @@ router.delete('/:id/sketches/:sketchId', (req: Request, res: Response) => {
 
 // Update a sketch's tier/sort_order within a collection
 router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
-  const { id: collectionId, sketchId } = req.params;
+  const collectionId = strParam(req.params.id);
+  const sketchId = strParam(req.params.sketchId);
   const scRow = db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow | undefined;
   if (!scRow) {
     res.status(404).json({ error: 'Sketch not in this collection' });

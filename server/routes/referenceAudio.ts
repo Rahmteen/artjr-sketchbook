@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { getFileStream, deleteFile } from '../storage.js';
 import { referenceAudioRowToApi } from '../map.js';
 import { createActivity } from '../activities.js';
+import { strParam } from '../param.js';
 
 const router = Router();
 
@@ -20,7 +21,8 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 router.get('/:id/audio', async (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(req.params.id) as {
+  const id = strParam(req.params.id);
+  const row = db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as {
     storage_key: string;
     mime_type: string;
   } | undefined;
@@ -41,7 +43,7 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
 });
 
 router.delete('/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as { storage_key: string } | undefined;
   if (!row) {
     res.status(404).json({ error: 'Reference audio not found' });

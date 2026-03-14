@@ -11,6 +11,7 @@ import {
   deleteFile,
   MAX_FILE_SIZE,
 } from '../storage.js';
+import { strParam } from '../param.js';
 import type { MelodyRow } from '../db.js';
 
 const router = Router();
@@ -41,7 +42,7 @@ function melodyRowToApi(row: MelodyRow) {
 }
 
 router.get('/sketch/:sketchId', (req: Request, res: Response) => {
-  const { sketchId } = req.params;
+  const sketchId = strParam(req.params.sketchId);
   const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
@@ -54,7 +55,7 @@ router.get('/sketch/:sketchId', (req: Request, res: Response) => {
 });
 
 router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res: Response) => {
-  const { sketchId } = req.params;
+  const sketchId = strParam(req.params.sketchId);
   const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
@@ -73,7 +74,7 @@ router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res
   const id = uuidv4();
   const ext = getExtension(req.file.mimetype);
   const durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
-  const storageKey = saveFile(req.file.buffer, ext, req.file.mimetype);
+  const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
   const now = new Date().toISOString();
   const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM melodies WHERE sketch_id = ?').get(sketchId) as { next: number };
 

@@ -4,6 +4,7 @@ import { getFileStream, deleteFile } from '../storage.js';
 import { sketchRowToSketch } from '../map.js';
 import type { ApiSketchCollection } from '../map.js';
 import { createActivity } from '../activities.js';
+import { strParam } from '../param.js';
 import type { SketchRow, NoteRow, ReferenceRow, SketchTagRow, TagRow } from '../db.js';
 
 const router = Router();
@@ -79,7 +80,8 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 router.get('/:id', (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(req.params.id) as SketchRow | undefined;
+  const id = strParam(req.params.id);
+  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -97,7 +99,8 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 router.get('/:id/audio', async (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(req.params.id) as SketchRow | undefined;
+  const id = strParam(req.params.id);
+  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -115,7 +118,8 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
 });
 
 router.get('/:id/download', async (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(req.params.id) as SketchRow | undefined;
+  const id = strParam(req.params.id);
+  const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -134,7 +138,7 @@ router.get('/:id/download', async (req: Request, res: Response) => {
 });
 
 router.put('/:id/tags', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });
@@ -162,7 +166,7 @@ router.put('/:id/tags', (req: Request, res: Response) => {
 
 router.patch('/:id', (req: Request, res: Response) => {
   const { title, description, bpm, key, versionLabel } = req.body as Record<string, unknown>;
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });
@@ -203,7 +207,7 @@ router.patch('/:id', (req: Request, res: Response) => {
 });
 
 router.delete('/:id', (req: Request, res: Response) => {
-  const id = req.params.id;
+  const id = strParam(req.params.id);
   const row = db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Sketch not found' });

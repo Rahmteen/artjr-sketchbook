@@ -34,7 +34,7 @@ router.post('/sketch', upload.single('file'), async (req: Request, res: Response
   const id = uuidv4();
   const ext = getExtension(req.file.mimetype);
   const durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
-  const storageKey = saveFile(req.file.buffer, ext, req.file.mimetype);
+  const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
   let version = 1;
   let groupId: string | null = null;
   if (parentSketchId) {
@@ -73,7 +73,7 @@ router.post('/sketch', upload.single('file'), async (req: Request, res: Response
 });
 
 router.post('/sketch/replace/:id', upload.single('file'), async (req: Request, res: Response) => {
-  const sketchId = req.params.id;
+  const sketchId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
   const existing = db.prepare('SELECT * FROM sketches WHERE id = ?').get(sketchId) as SketchRow | undefined;
   if (!existing) {
     res.status(404).json({ error: 'Sketch not found' });
@@ -90,7 +90,7 @@ router.post('/sketch/replace/:id', upload.single('file'), async (req: Request, r
   deleteFile(existing.storage_key);
   const ext = getExtension(req.file.mimetype);
   const durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
-  const storageKey = saveFile(req.file.buffer, ext, req.file.mimetype);
+  const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
   const now = new Date().toISOString();
   db.prepare(
     `UPDATE sketches SET storage_key = ?, file_name = ?, mime_type = ?, file_size_bytes = ?, duration_seconds = ?, updated_at = ? WHERE id = ?`
@@ -121,7 +121,7 @@ router.post('/reference', upload.single('file'), async (req: Request, res: Respo
   }
   const id = uuidv4();
   const ext = getExtension(req.file.mimetype);
-  const storageKey = saveFile(req.file.buffer, ext, req.file.mimetype);
+  const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
   const { label } = req.body as Record<string, string | undefined>;
   const now = new Date().toISOString();
   db.prepare(
