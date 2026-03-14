@@ -73,7 +73,17 @@ let pgPool: import('pg').Pool | null = null;
 async function getPg(): Promise<import('pg').Pool> {
   if (!pgPool) {
     const { default: pg } = await import('pg');
-    pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    const url = process.env.DATABASE_URL!;
+    // Serverless (Vercel): use short timeouts and small pool to avoid ENOTFOUND / connection issues with pooler
+    const isServerless = Boolean(process.env.VERCEL);
+    pgPool = new pg.Pool({
+      connectionString: url,
+      ...(isServerless && {
+        connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 5000,
+        max: 1,
+      }),
+    });
   }
   return pgPool;
 }

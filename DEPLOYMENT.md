@@ -25,7 +25,12 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
      - `VITE_API_URL` – leave unset to use same origin (recommended when API is on Vercel)
 
    - **Server / API:**  
-     - **`DATABASE_URL`** – **required for persistent DB.** Use your Supabase Postgres connection string (e.g. `postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres` from Supabase → Project Settings → Database).  
+     - **`DATABASE_URL`** – **required for persistent DB on Vercel.** Use the **Connection pooler (Transaction mode)** URL, not the direct URL, or you may get `getaddrinfo ENOTFOUND db.xxx.supabase.co`:
+       1. In Supabase: **Project Settings** → **Database**.
+       2. Under **Connection string**, choose **URI** and **Transaction** (not Session).
+       3. Copy the URL; it should look like `postgresql://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres`.
+       4. Append `?pgbouncer=true` if not already present (recommended for serverless).
+       Use that as `DATABASE_URL` in Vercel. Do **not** use the direct `db.xxx.supabase.co:5432` URL on Vercel—it often fails in serverless.
      - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` – required if you use Supabase storage  
      - `USE_SUPABASE_STORAGE=true` – recommended on Vercel so uploads go to Supabase  
      - `SUPABASE_STORAGE_BUCKET` – optional, default `audio`  
@@ -51,6 +56,11 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
   - Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (and optionally `SUPABASE_STORAGE_BUCKET`).
 
 Summary: for a production-like deploy on Vercel, set **`DATABASE_URL`** (Supabase Postgres), run **`supabase-schema.sql`** once, and use **Supabase Storage** for uploads.
+
+## Troubleshooting
+
+- **`getaddrinfo ENOTFOUND db.xxx.supabase.co`** – Vercel cannot reach Supabase’s direct DB host. Fix: set `DATABASE_URL` to the **Connection pooler (Transaction)** URL from Supabase (host `aws-0-<region>.pooler.supabase.com`, port **6543**), not the direct `db.xxx.supabase.co:5432` URL. See **Server / API** above.
+- **`ENOENT: mkdir '/var/task/data'`** – Old deploy without `DATABASE_URL` or before the SQLite-on-Vercel fix. Set `DATABASE_URL` (pooler URL) and redeploy, or redeploy so the app uses `/tmp` for SQLite when `DATABASE_URL` is unset.
 
 ## Local vs Vercel
 
