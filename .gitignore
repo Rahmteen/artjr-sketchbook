@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment (secrets – do not commit)
+.env
+.env.local
+.env.*.local
+
 # TypeScript incremental build info
 *.tsbuildinfo
 
