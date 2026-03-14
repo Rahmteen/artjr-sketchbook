@@ -29,7 +29,8 @@ app.use('/api/collections', collectionsRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/melodies', melodiesRouter);
 
-if (process.env.NODE_ENV !== 'development') {
+// Serve static client only when running as a standalone server (not on Vercel)
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'development') {
   const distPath = join(process.cwd(), 'dist');
   const { existsSync } = await import('fs');
   if (existsSync(distPath)) {
@@ -40,6 +41,11 @@ if (process.env.NODE_ENV !== 'development') {
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`ART JR Sketchbook API running at http://localhost:${PORT}`);
-});
+// On Vercel the app is exported and run as a serverless function; no listen()
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`ART JR Sketchbook API running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;

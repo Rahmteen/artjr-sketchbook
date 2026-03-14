@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b --force && vite build",
+    "build": "tsc -b --force && tsc -p tsconfig.server.json && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "NODE_ENV=development tsx server/index.ts"
