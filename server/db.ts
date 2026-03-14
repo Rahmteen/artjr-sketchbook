@@ -3,7 +3,7 @@ import { mkdirSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const usePg = Boolean(process.env.DATABASE_URL);
+const usePg = Boolean(process.env.DATABASE_URL || (process.env.VERCEL && process.env.DATABASE_POOLER_URL));
 
 /** Convert ? placeholders to $1, $2 for pg */
 function toPgParams(sql: string): string {
@@ -73,8 +73,10 @@ let pgPool: import('pg').Pool | null = null;
 async function getPg(): Promise<import('pg').Pool> {
   if (!pgPool) {
     const { default: pg } = await import('pg');
-    const url = process.env.DATABASE_URL!;
-    // Serverless (Vercel): use short timeouts and small pool to avoid ENOTFOUND / connection issues with pooler
+    // On Vercel, use pooler URL to avoid ENOTFOUND with direct db.xxx.supabase.co
+    const url =
+      (process.env.VERCEL && process.env.DATABASE_POOLER_URL) || process.env.DATABASE_URL;
+    if (!url) throw new Error('DATABASE_URL or (on Vercel) DATABASE_POOLER_URL is required for Postgres');
     const isServerless = Boolean(process.env.VERCEL);
     pgPool = new pg.Pool({
       connectionString: url,
