@@ -1,0 +1,596 @@
+---
+description: Design system tokens, components, layout, interaction, and content rules for ART JR Sketchbook
+globs: src/**
+alwaysApply: false
+---
+
+# artjr sketchbook -- Design System
+
+Single source of truth for every visual, interaction, and content convention. Reference before writing or modifying any UI code. Tokens are defined in `src/index.css` (CSS custom properties) and wired through `tailwind.config.js`.
+
+**Design philosophy:** Linear-inspired, dark-only, muted-rich, gallery aesthetic. The app frames sketches like art -- spacious, precise, and sophisticated.
+
+---
+
+## 1. Design Tokens
+
+### Color Palette (dark-only)
+
+All colors are CSS custom properties on `:root`. Never hardcode hex values in components.
+
+**Two formats are used:**
+
+- **RGB channels** (e.g. `9 9 11`) — for solid colors. These support Tailwind's `/opacity` modifier (e.g. `bg-accent/30`). Registered in Tailwind as `rgb(var(--x) / <alpha-value>)`.
+- **Pre-baked rgba** (e.g. `rgba(124,58,237,0.15)`) — for colors with inherent transparency. These do NOT support `/opacity` modifiers. To get a dimmed variant, use the parent solid color with an explicit opacity value instead (e.g. use `bg-accent/[0.075]` instead of `bg-accent-soft/50`).
+
+| Role | CSS Variable | Format | Tailwind | Supports /opacity? |
+|------|-------------|--------|----------|--------------------|
+| Base background | `--color-bg-base` | `9 9 11` | `bg-base` | Yes |
+| Surface | `--color-bg-surface` | `19 19 22` | `bg-surface` | Yes |
+| Elevated | `--color-bg-elevated` | `28 28 34` | `bg-elevated` | Yes |
+| Hover | `--color-bg-hover` | `37 37 48` | `bg-hover` | Yes |
+| Active | `--color-bg-active` | `46 46 58` | `bg-active` | Yes |
+| Border | `--color-border` | `rgba(255,255,255,0.06)` | `border-border` | No |
+| Border hover | `--color-border-hover` | `rgba(255,255,255,0.1)` | `border-border-hover` | No |
+| Border focus | `--color-border-focus` | `124 58 237` | `border-accent` | Yes |
+| Text primary | `--color-text` | `250 250 250` | `text-text` | Yes |
+| Text secondary | `--color-text-secondary` | `161 161 170` | `text-secondary` | Yes |
+| Text tertiary | `--color-text-tertiary` | `113 113 122` | `text-tertiary` | Yes |
+| Accent | `--color-accent` | `124 58 237` | `text-accent` / `bg-accent` | Yes |
+| Accent hover | `--color-accent-hover` | `109 40 217` | `bg-accent-hover` | Yes |
+| Accent soft | `--color-accent-soft` | `rgba(124,58,237,0.15)` | `bg-accent-soft` | No |
+| Accent muted | `--color-accent-muted` | `167 139 250` | `text-accent-muted` | Yes |
+| Danger | `--color-danger` | `239 68 68` | `text-danger` | Yes |
+| Danger soft | `--color-danger-soft` | `rgba(239,68,68,0.15)` | `bg-danger-soft` | No |
+| Success | `--color-success` | `34 197 94` | `text-success` | Yes |
+| Success soft | `--color-success-soft` | `rgba(34,197,94,0.15)` | `bg-success-soft` | No |
+
+**Adding a new color:**
+1. Add to `:root` in `src/index.css` — use RGB channels for solid colors, pre-baked rgba for transparent variants.
+2. Register in `tailwind.config.js` under `theme.extend.colors` — use `rgb(var(--x) / <alpha-value>)` for RGB channels, `var(--x)` for pre-baked rgba.
+
+### Tag Color Palette
+
+10 auto-assigned muted colors for tag pills. Color is derived from a hash of the tag name.
+
+`--tag-violet`, `--tag-blue`, `--tag-teal`, `--tag-emerald`, `--tag-amber`, `--tag-rose`, `--tag-pink`, `--tag-orange`, `--tag-cyan`, `--tag-lime`
+
+Use the `<TagPill>` component (`src/components/ui/TagPill.tsx`) for all tag rendering.
+
+### Border Radius
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `rounded-sm` | 12px | Small containers |
+| `rounded` (default) | 16px | Cards (`.card`), inputs |
+| `rounded-lg` | 20px | Larger containers |
+| `rounded-xl` | 24px | Modals, hero elements |
+| `rounded-2xl` | 28px | Extra-large panels |
+| `rounded-full` | 9999px | Buttons (`.btn`), icon buttons, pills, tag badges |
+
+### Shadows
+
+| Token | Usage |
+|-------|-------|
+| `shadow-card` | Default card elevation |
+| `shadow-card-hover` | Card hover state (paired with translateY(-1px)) |
+| `shadow-glow` | Accent-tinted glow for focused or highlighted elements |
+| `shadow-modal` | Modals and overlays |
+
+### Typography
+
+**Font family:** Inter (Google Fonts) with system fallbacks. Registered as `font-sans` in Tailwind.
+
+**Available weights:** 400 (Regular), 500 (Medium), 600 (Semibold), 700 (Bold).
+
+**Headings use bold (700).** Body uses regular (400). Labels use medium (500).
+
+Base body: `text-base leading-normal` (16px).
+
+---
+
+## 2. Typography Scale
+
+### Headings
+
+| Level | Classes | Example |
+|-------|---------|---------|
+| Page title | `text-3xl font-bold text-text tracking-tight` | Sketch detail title |
+| Section title | `text-xl font-bold text-text` | Collection name header |
+| Modal heading | `text-base font-bold text-text m-0` | "Edit details", "New version" |
+| Section label | `text-xs font-semibold uppercase tracking-wider text-tertiary` | "Sketches", "Timeline" |
+
+### Body text
+
+| Role | Classes |
+|------|---------|
+| Primary body | `text-sm text-text` |
+| Secondary | `text-sm text-secondary` |
+| Tertiary / meta | `text-xs text-tertiary` |
+| Sketch title in lists | `text-[15px] font-medium text-text` |
+| Description | `text-base text-secondary max-w-2xl` |
+
+### Labels
+
+Form labels: `block text-xs font-medium text-tertiary mb-1.5`
+
+### Brand mark
+
+```html
+<span class="text-lg font-bold text-accent">a</span>
+<span class="text-sm font-bold text-text tracking-tight">artjr</span>
+```
+
+In the sidebar, shown as "a" when collapsed, "artjr" when expanded.
+
+---
+
+## 3. Component Catalog
+
+### Cards
+
+**`.card`** -- primary content container:
+
+```
+@apply rounded-2xl border border-border bg-elevated shadow-card;
+```
+
+**`.card-hover`** -- extends `.card` with lift on hover:
+
+```
+@apply card transition-all duration-200;
+/* hover: shadow-card-hover + translateY(-1px) */
+```
+
+**`.modal`** -- overlay panel:
+
+```
+@apply rounded-2xl border border-border bg-elevated shadow-modal backdrop-blur-xl;
+```
+
+### Buttons
+
+All buttons are **pill-shaped** (`rounded-full`).
+
+**`.btn`** -- default:
+
+```
+@apply inline-flex items-center justify-center gap-2 rounded-full border border-border
+       bg-elevated px-4 py-2 text-sm font-medium text-text transition-all duration-150
+       hover:bg-hover hover:border-border-hover
+       disabled:opacity-50 disabled:cursor-not-allowed;
+```
+
+**`.btn-primary`** -- solid violet:
+
+```
+@apply border-accent bg-accent text-white
+       hover:bg-accent-hover hover:border-accent-hover;
+```
+
+**`.btn-ghost`** -- transparent:
+
+```
+@apply border-transparent bg-transparent text-secondary
+       hover:bg-hover hover:text-text;
+```
+
+**`.btn-danger`** -- soft red:
+
+```
+@apply border-transparent bg-danger-soft text-danger;
+```
+
+**Icon button** (inline pattern):
+
+```
+class="flex items-center justify-center w-10 h-10 rounded-full
+       text-secondary hover:text-text hover:bg-hover transition-colors"
+```
+
+### Form inputs
+
+**`.form-input`**:
+
+```
+@apply w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-text
+       placeholder:text-tertiary
+       focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
+```
+
+### Tags
+
+Use `<TagPill>` component for all tag rendering. Auto-assigns color from hash.
+
+- Default: `rounded-full px-2.5 py-0.5 text-xs font-medium` with colored bg/text
+- Removable: adds X button via `onRemove` prop
+
+### Tables
+
+Wrap in `.card overflow-hidden`. Rows representing navigable entities use `.row-link` for full-row clickability:
+
+```html
+<div class="card overflow-hidden">
+  <table class="w-full text-left">
+    <thead>
+      <tr class="border-b border-border">
+        <th class="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-tertiary">...</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-border">
+      <tr class="row-link" onClick={() => navigate(url)} role="link" tabIndex={0}>
+        <td class="px-6 py-4">...</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+### Skeleton Loading
+
+Use components from `src/components/ui/Skeleton.tsx`:
+
+- `<SkeletonLine>` -- configurable width/height shimmer bar
+- `<SkeletonCard>` -- card-shaped placeholder
+- `<SkeletonTable>` -- header + N rows of shimmer
+- `<SkeletonGrid>` -- grid of SkeletonCards
+
+### View Switcher
+
+Use `<ViewSwitcher>` from `src/components/ui/ViewSwitcher.tsx`:
+
+- Three modes: `grid`, `list`, `table`
+- Active button gets `bg-accent-soft text-accent`
+- Persist user preference in localStorage
+
+### Sketch Card
+
+Use `<SketchCard>` from `src/components/ui/SketchCard.tsx`:
+
+- Rich card with waveform preview, title, BPM/key, tags
+- Hover: scale + shadow lift + reveal play/action overlay
+
+### Drop zones
+
+```
+border-2 border-dashed border-border bg-surface rounded-2xl
+hover:border-accent/50 hover:bg-accent/[0.075]
+```
+
+Active (drag-over): `border-accent bg-accent-soft`
+
+> Note: `accent-soft` is a pre-baked rgba color and cannot use `/opacity`. Use `bg-accent/[0.075]` to get a half-intensity version.
+
+### Modals
+
+Overlay backdrop: `fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]`
+
+Panel: `.modal` class. Max widths: `max-w-[400px]` for settings, `max-w-[480px]` for upload.
+
+### Dropdowns / popovers
+
+```
+class="absolute top-full left-0 mt-1 py-1 rounded-xl
+       bg-elevated border border-border shadow-modal z-10 min-w-[140px]"
+```
+
+Items: `px-3 py-2 text-sm text-text hover:bg-hover rounded-lg`.
+
+---
+
+## 4. Layout Rules
+
+### Navigation
+
+**Collapsible sidebar** (`src/components/ui/Sidebar.tsx`):
+
+- **Expanded (240px)**: Brand "artjr" + Upload button + nav links (icon + label) + collections list + Lock/Collapse at bottom
+- **Collapsed (60px)**: Brand "a" + icon-only nav + compact collection icons
+- Persist state in `localStorage('sidebar-collapsed')`
+- Active nav item: `bg-hover text-text` with accent icon
+- Fixed position, full height, `border-r border-border bg-surface`
+
+### Page wrapper
+
+Main content area in AppLayout:
+
+```
+class="p-8 lg:p-12 max-w-6xl w-full mx-auto"
+```
+
+Margin-left transitions with sidebar: `ml-[240px]` or `ml-[60px]`.
+
+### Page transitions
+
+`<PageTransition>` wraps `<Outlet />` using framer-motion:
+
+- Slide-in: `x: 12 -> 0`, `opacity: 0 -> 1`
+- Duration: 200ms, ease-out
+
+### Top progress bar
+
+`<TopProgressBar>` shows 2px violet bar on route changes.
+
+### Section spacing
+
+- Between major sections: `space-y-12`
+- Default sections: `space-y-6`
+- Inside forms/modals: `space-y-4` to `space-y-5`
+
+### Card inner padding
+
+- Content blocks: `p-6` or `p-8`
+- Table rows: `px-6 py-3.5` (header) or `px-6 py-4` (body)
+- Grid cards: `p-5` or `p-6`
+- Modal panels: `px-5 pb-5`
+
+### Grids
+
+Responsive grid:
+
+```
+class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+```
+
+### Max widths
+
+| Context | Max width |
+|---------|-----------|
+| Page content | `max-w-6xl` (1152px) |
+| Settings modal | `max-w-[400px]` |
+| Upload modal | `max-w-[480px]` |
+| Gate form | `max-w-sm` (384px) |
+
+---
+
+## 5. Interaction and Motion
+
+### Motion system (framer-motion)
+
+All page-level and list animations use components from `src/components/ui/Motion.tsx`. Never write raw framer-motion `<motion.div>` inline when a primitive exists.
+
+**Shared constants:**
+
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `EASE_OUT_EXPO` | `[0.16, 1, 0.3, 1]` | Primary easing -- smooth deceleration for enters |
+| `EASE_OUT` | `[0.25, 0.46, 0.45, 0.94]` | Secondary easing -- fade-ins |
+| `BASE_DURATION` | `0.45s` | Default animation duration |
+| `STAGGER_INTERVAL` | `0.04s` | Delay between staggered children |
+
+**Page sections -- staggered cascade:**
+
+```tsx
+<Stagger className="space-y-12">
+  <StaggerItem>section 1</StaggerItem>
+  <StaggerItem>section 2</StaggerItem>
+  <StaggerItem>section 3</StaggerItem>
+</Stagger>
+```
+
+Sections fade up (y: 10→0, opacity: 0→1) with 40ms stagger between each.
+
+**Individual elements -- fade up:**
+
+```tsx
+<FadeUp delay={0.06}>content</FadeUp>
+```
+
+Use for toolbars, headers, standalone cards. Supports `delay`, `duration`, `distance` props.
+
+**Table rows / list items -- staggered slide:**
+
+```tsx
+<StaggerList as="tbody" className="divide-y divide-border">
+  <StaggerRow as="tr" className="...">row</StaggerRow>
+</StaggerList>
+```
+
+Rows slide in from left (x: -8→0, opacity: 0→1) with 30ms stagger. Supports `as` prop for `div`, `tbody`, `ul`, `tr`, `li`.
+
+**Grid cards -- staggered cascade:**
+
+```tsx
+<Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+  <StaggerItem><SketchCard .../></StaggerItem>
+</Stagger>
+```
+
+**Modals -- scale + fade:**
+
+Backdrop: `motion.div` with `opacity: 0→1`, 200ms.
+Panel: `motion.div` with `scale: 0.95→1, y: 10→0, opacity: 0→1`, 250ms, `EASE_OUT_EXPO`, 40ms delay.
+
+**Sidebar -- slide in from left:**
+
+Sidebar container slides in (x: -20→0) over 400ms on mount. Nav items stagger in (x: -10→0) with 40ms intervals starting at 200ms delay.
+
+**Page transitions:**
+
+`<PageTransition>` uses `AnimatePresence mode="popLayout"` with route-keyed fade (opacity only, 180ms). No exit delay -- `popLayout` crossfades old/new simultaneously.
+
+**Tab content:**
+
+Wrap tab panels in `<FadeUp duration={0.3}>` for a quick reveal when switching tabs.
+
+### Hover
+
+- Cards: `hover:bg-hover transition-colors` or `.card-hover` (lift + shadow)
+- Nav links: `hover:text-text` (from secondary)
+- Buttons: defined in each `.btn-*` variant
+- Links: no global hover underline. Use `.prose-link` class only on inline text links within notes, descriptions, and prose content
+
+### Clickability
+
+Every list item or table row that represents a navigable entity must be fully clickable. Apply the `.row-link` class to `<tr>` elements for consistent hover styling (background highlight on hover). Use `e.stopPropagation()` on any secondary interactive elements within the row (context menus, tags, action buttons) to prevent row navigation. Add `role="link"`, `tabIndex={0}`, and `onKeyDown` (Enter) for accessibility.
+
+### Focus
+
+All focusable inputs:
+
+```
+focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30
+```
+
+(In `@apply` directives, use raw CSS: `.form-input:focus { --tw-ring-color: rgb(var(--color-accent) / 0.3); }`)
+
+### Active / selected states
+
+- Tabs: `border-b-2 -mb-px` with `border-accent text-accent` / `border-transparent text-secondary`
+- View switcher: `bg-accent-soft text-accent` for active
+- Sidebar nav: `bg-hover text-text` with accent icon
+
+### Drag and drop
+
+- Draggable: `cursor-grab active:cursor-grabbing`
+- Dragging: `opacity-50`
+- Drop target active: `border-accent bg-accent-soft`
+
+### CSS transitions (non-motion)
+
+- `transition-all duration-150` -- buttons, cards
+- `transition-colors` -- rows, nav items
+- `transition-opacity duration-200` -- transient UI
+
+### Loading
+
+- **Skeleton screens** for data fetches (use Skeleton components)
+- **Top progress bar** (2px violet) on route changes
+- Buttons while loading: `disabled:opacity-50`
+- Inline loading spinner (rare): `<Loader2>` from lucide with `animate-spin`
+
+### Disabled
+
+```
+disabled:opacity-50 disabled:cursor-not-allowed
+```
+
+---
+
+## 6. UX Patterns
+
+### Empty states
+
+Minimal centered prompt:
+
+```html
+<div class="py-10 text-center">
+  <p class="m-0 text-sm text-secondary">No sketches yet</p>
+</div>
+```
+
+Or inside a card: `<p class="p-10 m-0 text-secondary text-sm text-center">...</p>`
+
+### Error states
+
+- Inline: `<p class="text-sm text-danger m-0">...</p>`
+- Page-level: `<p class="text-danger">...</p>`
+
+### Navigation
+
+Sidebar-based. Use `<Link>` from react-router-dom. Back links:
+
+```html
+<Link class="inline-flex items-center gap-1 text-sm text-secondary hover:text-text no-underline transition-colors">
+  <ChevronLeft size={16} /> Back to sketches
+</Link>
+```
+
+### Pagination
+
+```html
+<div class="flex items-center justify-center gap-3">
+  <button class="btn"><ChevronLeft size={16} /> Previous</button>
+  <span class="text-sm text-secondary tabular-nums">Page 1 of 5</span>
+  <button class="btn">Next <ChevronRight size={16} /></button>
+</div>
+```
+
+### Confirmation
+
+Inline two-button pattern. "Are you sure?" with "Yes, delete" + "Cancel" side by side.
+
+### Tag input
+
+Inline input with dropdown suggestions. `<TagPill>` components left of input.
+
+### Modals
+
+Centered with backdrop. Drag handle: `<div class="w-10 h-1 rounded-full bg-border">`. Menu items are full-width rounded-xl buttons.
+
+---
+
+## 7. Icons
+
+Use **Lucide** icons (`lucide-react`). Standard size: 16-18px for inline, 20px for buttons.
+
+Common icons:
+- Navigation: `Home`, `Music`, `FolderOpen`, `Clock`, `Plus`
+- Actions: `Settings`, `Download`, `ChevronLeft`, `ChevronRight`, `Pencil`
+- Player: `Play`, `Pause`, `Repeat`, `Repeat1`, `PenLine`
+- UI: `X`, `MoreHorizontal`, `ArrowUpDown`, `Upload`, `Lock`, `PanelLeft`, `PanelLeftClose`, `Loader2`
+- Content: `Folder`, `LayoutGrid`, `List`, `Table2`
+
+---
+
+## 8. Content and Tone
+
+### Labels
+
+- Short, lowercase, no trailing period: "No sketches yet", "No activity yet"
+- Action verbs: "Upload", "New collection", "Save", "Cancel", "Delete"
+- Loading: "Adding...", "Saving...", "Uploading..."
+- Brand: always lowercase "artjr"
+
+### Dates
+
+- Short: `month: 'short', day: 'numeric', year: 'numeric'`
+- Same day: `hour: '2-digit', minute: '2-digit'`
+
+### Duration
+
+- Compact: `M:SS` (e.g. `3:42`) with `tabular-nums`
+- Human: "X minutes, Y seconds"
+
+---
+
+## 9. Rules
+
+### Do
+
+- Use `.card`, `.btn`, `.btn-primary`, `.btn-ghost`, `.btn-danger`, `.form-input` for their roles
+- Use CSS custom properties via Tailwind aliases for all colors
+- Use `rounded-full` for buttons, `rounded-2xl` for cards, `rounded-xl` for inputs
+- Use `<Link>` for internal navigation, never `<a>`
+- Use `<TagPill>` for all tag rendering
+- Use skeleton components for loading states
+- Use Lucide icons, never hand-rolled SVGs
+- Keep modals at `z-[100]`, progress bar at `z-[200]`
+- Use `transition-all duration-150` on interactive elements
+
+### Don't
+
+- Don't add light mode tokens or `prefers-color-scheme` media queries
+- Don't hardcode hex colors in JSX
+- Don't use `z-index` above 200
+- Don't add new font families or weights without updating `index.html` and `tailwind.config.js`
+- Don't use text-based "Loading..." indicators; use skeleton screens
+- Don't create one-off styled containers; extend the component classes
+
+---
+
+## Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/index.css` | CSS custom properties (tokens), base resets, component classes |
+| `tailwind.config.js` | Maps tokens to Tailwind, radii, shadows, font stack |
+| `src/pages/AppLayout.tsx` | Sidebar + main content shell |
+| `src/components/ui/Sidebar.tsx` | Collapsible sidebar navigation |
+| `src/components/ui/Skeleton.tsx` | Skeleton loading primitives |
+| `src/components/ui/TopProgressBar.tsx` | Route-change progress bar |
+| `src/components/ui/ViewSwitcher.tsx` | Grid/List/Table view toggle |
+| `src/components/ui/PageTransition.tsx` | Framer-motion page transitions |
+| `src/components/ui/SketchCard.tsx` | Rich sketch card for grid views |
+| `src/components/ui/TagPill.tsx` | Auto-colored tag pill component |
+| `src/components/ui/Motion.tsx` | Framer-motion primitives: FadeIn, FadeUp, Stagger, StaggerItem, StaggerList, StaggerRow, ScaleIn, Backdrop |

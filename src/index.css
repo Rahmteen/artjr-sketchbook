@@ -1,0 +1,222 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design Tokens: dark-only ─── */
+/* RGB channel format enables Tailwind v3 opacity modifiers (e.g. bg-accent/30) */
+:root {
+  /* Background layers (subtle depth) — RGB channels */
+  --color-bg-base: 9 9 11;
+  --color-bg-surface: 19 19 22;
+  --color-bg-elevated: 28 28 34;
+  --color-bg-hover: 37 37 48;
+  --color-bg-active: 46 46 58;
+
+  /* Borders — pre-baked rgba, not decomposable */
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.1);
+  --color-border-focus: 124 58 237;
+
+  /* Text — RGB channels */
+  --color-text: 250 250 250;
+  --color-text-secondary: 161 161 170;
+  --color-text-tertiary: 113 113 122;
+
+  /* Accent (violet) — RGB channels */
+  --color-accent: 124 58 237;
+  --color-accent-hover: 109 40 217;
+  --color-accent-soft: rgba(124, 58, 237, 0.15);
+  --color-accent-muted: 167 139 250;
+
+  /* Semantic — RGB channels for solid, pre-baked rgba for soft */
+  --color-danger: 239 68 68;
+  --color-danger-soft: rgba(239, 68, 68, 0.15);
+  --color-success: 34 197 94;
+  --color-success-soft: rgba(34, 197, 94, 0.15);
+
+  /* Tag palette (10 muted/desaturated) */
+  --tag-violet: #8B5CF6;
+  --tag-blue: #3B82F6;
+  --tag-teal: #14B8A6;
+  --tag-emerald: #10B981;
+  --tag-amber: #F59E0B;
+  --tag-rose: #F43F5E;
+  --tag-pink: #EC4899;
+  --tag-orange: #F97316;
+  --tag-cyan: #06B6D4;
+  --tag-lime: #84CC16;
+
+  /* Sidebar */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 60px;
+}
+
+/* ─── Base layer ─── */
+@layer base {
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply min-h-screen m-0 font-sans text-base leading-normal text-text;
+    background-color: rgb(var(--color-bg-base));
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  a {
+    @apply text-accent no-underline;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  ::selection {
+    background-color: rgb(var(--color-accent) / 0.3);
+    color: rgb(var(--color-text));
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* ─── Component layer ─── */
+@layer components {
+
+  /* Cards */
+  .card {
+    @apply rounded-lg border border-border bg-elevated shadow-card;
+  }
+  .card-hover {
+    @apply card transition-all duration-200;
+  }
+  .card-hover:hover {
+    @apply shadow-card-hover;
+    transform: translateY(-1px);
+  }
+
+  /* Modals */
+  .modal {
+    @apply rounded-lg border border-border bg-elevated shadow-modal backdrop-blur-xl;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-border
+           bg-elevated px-4 py-2 text-sm font-medium text-text transition-all duration-150
+           hover:bg-hover hover:border-border-hover
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply border-accent bg-accent text-white
+           hover:bg-accent-hover hover:border-accent-hover
+           disabled:hover:bg-accent;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-secondary
+           hover:bg-hover hover:text-text hover:border-transparent;
+  }
+
+  .btn-danger {
+    @apply border-transparent bg-danger-soft text-danger;
+  }
+  .btn-danger:hover {
+    background-color: rgba(239, 68, 68, 0.12);
+  }
+
+  /* Form inputs */
+  .form-input {
+    @apply w-full rounded-md border border-border bg-surface px-4 py-2.5 text-text
+           placeholder:text-tertiary
+           focus:border-accent focus:outline-none focus:ring-2
+           transition-all duration-150;
+  }
+  .form-input:focus {
+    --tw-ring-color: rgb(var(--color-accent) / 0.3);
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-surface;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.04) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Prose links — opt-in underline on hover for inline text links */
+  .prose-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Clickable table rows */
+  .row-link {
+    @apply cursor-pointer transition-colors;
+  }
+  .row-link:hover {
+    background-color: rgb(var(--color-bg-hover));
+  }
+
+  /* Screen-reader only */
+  .sr-only {
+    @apply absolute h-px w-px -m-px overflow-hidden whitespace-nowrap border-0 p-0;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+  }
+}
+
+/* ─── Keyframes ─── */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes copied-in {
+  0% { opacity: 0; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes copied-out {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.98); }
+}
+
+.animate-copied {
+  animation: copied-in 0.35s ease-out, copied-out 0.4s ease-in 0.9s forwards;
+}
