@@ -5,8 +5,9 @@ import type { NoteRow } from '../db.js';
 
 const router = Router();
 
-router.get('/sketch/:sketchId', (req: Request, res: Response) => {
-  const notes = db.prepare('SELECT * FROM notes WHERE sketch_id = ? ORDER BY created_at').all(req.params.sketchId) as NoteRow[];
+router.get('/sketch/:sketchId', async (req: Request, res: Response) => {
+  const sketchId = Array.isArray(req.params.sketchId) ? req.params.sketchId[0] : req.params.sketchId ?? '';
+  const notes = (await db.prepare('SELECT * FROM notes WHERE sketch_id = ? ORDER BY created_at').all(sketchId)) as NoteRow[];
   res.json(notes.map((r) => ({
     id: r.id,
     sketchId: r.sketch_id,
@@ -17,9 +18,9 @@ router.get('/sketch/:sketchId', (req: Request, res: Response) => {
   })));
 });
 
-router.post('/sketch/:sketchId', (req: Request, res: Response) => {
-  const sketchId = req.params.sketchId;
-  const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
+router.post('/sketch/:sketchId', async (req: Request, res: Response) => {
+  const sketchId = Array.isArray(req.params.sketchId) ? req.params.sketchId[0] : req.params.sketchId ?? '';
+  const sketch = await db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -31,10 +32,10 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   }
   const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO notes (id, sketch_id, type, time_seconds, content, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   ).run(id, sketchId, type, type === 'timestamp' && timeSeconds != null ? timeSeconds : null, content, now);
-  const row = db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow;
+  const row = await db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow;
   res.status(201).json({
     id: row.id,
     sketchId: row.sketch_id,
@@ -45,21 +46,21 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   });
 });
 
-router.patch('/:id', (req: Request, res: Response) => {
+router.patch('/:id', async (req: Request, res: Response) => {
   const { content, timeSeconds } = req.body as { content?: string; timeSeconds?: number };
-  const id = req.params.id;
-  const row = db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow | undefined;
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+  const row = await db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Note not found' });
     return;
   }
   if (content !== undefined) {
-    db.prepare('UPDATE notes SET content = ? WHERE id = ?').run(content, id);
+    await db.prepare('UPDATE notes SET content = ? WHERE id = ?').run(content, id);
   }
   if (timeSeconds !== undefined && row.type === 'timestamp') {
-    db.prepare('UPDATE notes SET time_seconds = ? WHERE id = ?').run(timeSeconds, id);
+    await db.prepare('UPDATE notes SET time_seconds = ? WHERE id = ?').run(timeSeconds, id);
   }
-  const updated = db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow;
+  const updated = await db.prepare('SELECT * FROM notes WHERE id = ?').get(id) as NoteRow;
   res.json({
     id: updated.id,
     sketchId: updated.sketch_id,
@@ -70,10 +71,15 @@ router.patch('/:id', (req: Request, res: Response) => {
   });
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const r = db.prepare('DELETE FROM notes WHERE id = ?').run(req.params.id);
-  if (r.changes === 0) res.status(404).json({ error: 'Note not found' });
-  else res.status(204).send();
+router.delete('/:id', async (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+  const row = await db.prepare('SELECT id FROM notes WHERE id = ?').get(id);
+  if (!row) {
+    res.status(404).json({ error: 'Note not found' });
+    return;
+  }
+  await db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+  res.status(204).send();
 });
 
 export default router;

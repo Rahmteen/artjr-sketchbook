@@ -6,9 +6,9 @@ import type { SketchRow, NoteRow, ReferenceRow } from '../db.js';
 
 const router = Router();
 
-router.post('/sketch/:sketchId', (req: Request, res: Response) => {
-  const sketchId = req.params.sketchId;
-  const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
+router.post('/sketch/:sketchId', async (req: Request, res: Response) => {
+  const sketchId = Array.isArray(req.params.sketchId) ? req.params.sketchId[0] : req.params.sketchId ?? '';
+  const sketch = await db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -20,7 +20,7 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   const expiresAt = expiresInHours
     ? new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString()
     : null;
-  db.prepare(
+  await db.prepare(
     `INSERT INTO share_tokens (id, sketch_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`
   ).run(id, sketchId, token, expiresAt, now.toISOString());
   const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
@@ -34,8 +34,9 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   });
 });
 
-router.get('/resolve/:token', (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM share_tokens WHERE token = ?').get(req.params.token) as {
+router.get('/resolve/:token', async (req: Request, res: Response) => {
+  const token = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token ?? '';
+  const row = await db.prepare('SELECT * FROM share_tokens WHERE token = ?').get(token) as {
     sketch_id: string;
     expires_at: string | null;
   } | undefined;
@@ -44,17 +45,17 @@ router.get('/resolve/:token', (req: Request, res: Response) => {
     return;
   }
   if (row.expires_at && new Date(row.expires_at) < new Date()) {
-    db.prepare('DELETE FROM share_tokens WHERE token = ?').run(req.params.token);
+    await db.prepare('DELETE FROM share_tokens WHERE token = ?').run(token);
     res.status(404).json({ error: 'Share link expired' });
     return;
   }
-  const sketchRow = db.prepare('SELECT * FROM sketches WHERE id = ?').get(row.sketch_id) as SketchRow | undefined;
+  const sketchRow = await db.prepare('SELECT * FROM sketches WHERE id = ?').get(row.sketch_id) as SketchRow | undefined;
   if (!sketchRow) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
   }
-  const notes = db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(sketchRow.id) as NoteRow[];
-  const refs = db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(sketchRow.id) as ReferenceRow[];
+  const notes = await db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(sketchRow.id) as NoteRow[];
+  const refs = await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(sketchRow.id) as ReferenceRow[];
   res.json(sketchRowToSketch(sketchRow, notes, refs));
 });
 

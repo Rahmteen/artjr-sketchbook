@@ -7,8 +7,8 @@ import { strParam } from '../param.js';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
-  const rows = db.prepare('SELECT * FROM reference_audio ORDER BY created_at DESC').all() as Array<{
+router.get('/', async (_req: Request, res: Response) => {
+  const rows = await db.prepare('SELECT * FROM reference_audio ORDER BY created_at DESC').all() as Array<{
     id: string;
     storage_key: string;
     file_name: string;
@@ -22,7 +22,7 @@ router.get('/', (_req: Request, res: Response) => {
 
 router.get('/:id/audio', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
-  const row = db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as {
+  const row = await db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as {
     storage_key: string;
     mime_type: string;
   } | undefined;
@@ -42,17 +42,17 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
   });
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
-  const row = db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as { storage_key: string } | undefined;
+  const row = await db.prepare('SELECT * FROM reference_audio WHERE id = ?').get(id) as { storage_key: string } | undefined;
   if (!row) {
     res.status(404).json({ error: 'Reference audio not found' });
     return;
   }
-  db.prepare('DELETE FROM sketch_references WHERE reference_audio_id = ?').run(id);
+  await db.prepare('DELETE FROM sketch_references WHERE reference_audio_id = ?').run(id);
   deleteFile(row.storage_key);
-  createActivity('delete', 'reference_audio', id, {});
-  db.prepare('DELETE FROM reference_audio WHERE id = ?').run(id);
+  await createActivity('delete', 'reference_audio', id, {});
+  await db.prepare('DELETE FROM reference_audio WHERE id = ?').run(id);
   res.status(204).send();
 });
 

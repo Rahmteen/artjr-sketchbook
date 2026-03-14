@@ -17,13 +17,13 @@ import type {
 
 const router = Router();
 
-function getTagsForSketches(sketchIds: string[]): Map<string, { id: string; name: string }[]> {
+async function getTagsForSketches(sketchIds: string[]): Promise<Map<string, { id: string; name: string }[]>> {
   if (!sketchIds.length) return new Map();
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT st.sketch_id, t.id, t.name FROM sketch_tags st JOIN tags t ON t.id = st.tag_id WHERE st.sketch_id IN (${sketchIds.map(() => '?').join(',')})`
     )
-    .all(...sketchIds) as (SketchTagRow & TagRow)[];
+    .all(...sketchIds)) as (SketchTagRow & TagRow)[];
   const map = new Map<string, { id: string; name: string }[]>();
   for (const r of rows) {
     const list = map.get(r.sketch_id) ?? [];
@@ -33,15 +33,15 @@ function getTagsForSketches(sketchIds: string[]): Map<string, { id: string; name
   return map;
 }
 
-function getCollectionsForSketches(sketchIds: string[]): Map<string, { collectionId: string; collectionName: string; tierId: string | null; tierLabel: string | null }[]> {
+async function getCollectionsForSketches(sketchIds: string[]): Promise<Map<string, { collectionId: string; collectionName: string; tierId: string | null; tierLabel: string | null }[]>> {
   if (!sketchIds.length) return new Map();
-  const rows = db.prepare(
+  const rows = (await db.prepare(
     `SELECT sc.sketch_id, sc.collection_id, c.name as collection_name, sc.tier_id, ct.label as tier_label
      FROM sketch_collections sc
      JOIN collections c ON c.id = sc.collection_id
      LEFT JOIN collection_tiers ct ON ct.id = sc.tier_id
      WHERE sc.sketch_id IN (${sketchIds.map(() => '?').join(',')})`
-  ).all(...sketchIds) as { sketch_id: string; collection_id: string; collection_name: string; tier_id: string | null; tier_label: string | null }[];
+  ).all(...sketchIds)) as { sketch_id: string; collection_id: string; collection_name: string; tier_id: string | null; tier_label: string | null }[];
   const map = new Map<string, { collectionId: string; collectionName: string; tierId: string | null; tierLabel: string | null }[]>();
   for (const r of rows) {
     const list = map.get(r.sketch_id) ?? [];
@@ -52,8 +52,8 @@ function getCollectionsForSketches(sketchIds: string[]): Map<string, { collectio
 }
 
 // List all collections with sketch counts
-router.get('/', (_req: Request, res: Response) => {
-  const rows = db
+router.get('/', async (_req: Request, res: Response) => {
+  const rows = (await db
     .prepare(`
       SELECT c.*, COALESCE(cnt.sketch_count, 0) as sketch_count
       FROM collections c
@@ -61,7 +61,7 @@ router.get('/', (_req: Request, res: Response) => {
         ON cnt.collection_id = c.id
       ORDER BY c.updated_at DESC, c.created_at DESC
     `)
-    .all() as (CollectionRow & { sketch_count: number })[];
+    .all()) as (CollectionRow & { sketch_count: number })[];
   res.json(
     rows.map((r) => ({
       id: r.id,
@@ -74,7 +74,7 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // Create collection
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { name } = req.body as { name?: string };
   if (!name || typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'name is required' });
@@ -82,26 +82,26 @@ router.post('/', (req: Request, res: Response) => {
   }
   const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare('INSERT INTO collections (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, name.trim(), now, now);
-  createActivity('create', 'collection', id, { collectionName: name.trim() });
+  await db.prepare('INSERT INTO collections (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, name.trim(), now, now);
+  await createActivity('create', 'collection', id, { collectionName: name.trim() });
   res.status(201).json({ id, name: name.trim(), createdAt: now, updatedAt: now, sketchCount: 0 });
 });
 
 // Get single collection with tiers
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
-  const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
+  const row = await db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
     return;
   }
-  const tiers = db
+  const tiers = (await db
     .prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC, label ASC')
-    .all(id) as CollectionTierRow[];
+    .all(id)) as CollectionTierRow[];
 
-  const tierSketchCounts = db.prepare(
+  const tierSketchCounts = (await db.prepare(
     `SELECT tier_id, COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? GROUP BY tier_id`
-  ).all(id) as { tier_id: string | null; cnt: number }[];
+  ).all(id)) as { tier_id: string | null; cnt: number }[];
   const countMap = new Map(tierSketchCounts.map((r) => [r.tier_id, r.cnt]));
 
   res.json({
@@ -121,9 +121,9 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // Update collection name (tierLabels approach removed — use individual tier CRUD)
-router.patch('/:id', (req: Request, res: Response) => {
+router.patch('/:id', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
-  const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
+  const row = await db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
     return;
@@ -131,16 +131,16 @@ router.patch('/:id', (req: Request, res: Response) => {
   const { name } = req.body as { name?: string };
   if (typeof name === 'string' && name.trim()) {
     const oldName = row.name;
-    db.prepare('UPDATE collections SET name = ?, updated_at = ? WHERE id = ?').run(name.trim(), new Date().toISOString(), id);
+    await db.prepare('UPDATE collections SET name = ?, updated_at = ? WHERE id = ?').run(name.trim(), new Date().toISOString(), id);
     if (oldName !== name.trim()) {
-      createActivity('rename', 'collection', id, { oldName, newName: name.trim(), collectionName: name.trim() });
+      await createActivity('rename', 'collection', id, { oldName, newName: name.trim(), collectionName: name.trim() });
     } else {
-      createActivity('update', 'collection', id, { collectionName: name.trim() });
+      await createActivity('update', 'collection', id, { collectionName: name.trim() });
     }
   }
-  const updated = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow;
-  const tiers = db.prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC').all(id) as CollectionTierRow[];
-  const tierSketchCounts = db.prepare(
+  const updated = await db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow;
+  const tiers = await db.prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC').all(id) as CollectionTierRow[];
+  const tierSketchCounts = await db.prepare(
     `SELECT tier_id, COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? GROUP BY tier_id`
   ).all(id) as { tier_id: string | null; cnt: number }[];
   const countMap = new Map(tierSketchCounts.map((r) => [r.tier_id, r.cnt]));
@@ -161,46 +161,46 @@ router.patch('/:id', (req: Request, res: Response) => {
 });
 
 // Delete collection
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
-  const row = db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
+  const row = await db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Collection not found' });
     return;
   }
-  db.prepare('DELETE FROM sketch_collections WHERE collection_id = ?').run(id);
-  db.prepare('DELETE FROM collection_tiers WHERE collection_id = ?').run(id);
-  db.prepare('DELETE FROM collections WHERE id = ?').run(id);
-  createActivity('delete', 'collection', id, { collectionName: row.name });
+  await db.prepare('DELETE FROM sketch_collections WHERE collection_id = ?').run(id);
+  await db.prepare('DELETE FROM collection_tiers WHERE collection_id = ?').run(id);
+  await db.prepare('DELETE FROM collections WHERE id = ?').run(id);
+  await createActivity('delete', 'collection', id, { collectionName: row.name });
   res.status(204).send();
 });
 
 // Get sketches in a collection (via join table)
-router.get('/:id/sketches', (req: Request, res: Response) => {
+router.get('/:id/sketches', async (req: Request, res: Response) => {
   const collectionId = strParam(req.params.id);
-  const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
+  const col = await db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
     return;
   }
-  const scRows = db.prepare(
+  const scRows = (await db.prepare(
     `SELECT sc.tier_id, sc.sort_order, s.*
      FROM sketch_collections sc
      JOIN sketches s ON s.id = sc.sketch_id
      WHERE sc.collection_id = ?
      ORDER BY sc.sort_order ASC, s.updated_at DESC`
-  ).all(collectionId) as (SketchRow & { tier_id: string | null; sort_order: number })[];
+  ).all(collectionId)) as (SketchRow & { tier_id: string | null; sort_order: number })[];
 
   const sketchIds = scRows.map((r) => r.id);
-  const tagsBySketch = getTagsForSketches(sketchIds);
-  const collectionsBySketch = getCollectionsForSketches(sketchIds);
+  const tagsBySketch = await getTagsForSketches(sketchIds);
+  const collectionsBySketch = await getCollectionsForSketches(sketchIds);
 
-  const tiers = db.prepare('SELECT id, label FROM collection_tiers WHERE collection_id = ?').all(collectionId) as { id: string; label: string }[];
+  const tiers = (await db.prepare('SELECT id, label FROM collection_tiers WHERE collection_id = ?').all(collectionId)) as { id: string; label: string }[];
   const tierLabelMap = new Map(tiers.map((t) => [t.id, t.label]));
 
-  const sketches = scRows.map((row) => {
-    const notes = db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(row.id) as NoteRow[];
-    const refs = db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(row.id) as ReferenceRow[];
+  const sketches = await Promise.all(scRows.map(async (row) => {
+    const notes = (await db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(row.id)) as NoteRow[];
+    const refs = (await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(row.id)) as ReferenceRow[];
     const tags = tagsBySketch.get(row.id) ?? [];
     const collections = collectionsBySketch.get(row.id) ?? [];
     const sketch = sketchRowToSketch(row, notes, refs, { tags, collections });
@@ -209,14 +209,14 @@ router.get('/:id/sketches', (req: Request, res: Response) => {
     sketch.tierLabel = row.tier_id ? tierLabelMap.get(row.tier_id) ?? undefined : undefined;
     sketch.sortOrder = row.sort_order;
     return sketch;
-  });
+  }));
   res.json(sketches);
 });
 
 // Add sketches to a collection
-router.post('/:id/sketches', (req: Request, res: Response) => {
+router.post('/:id/sketches', async (req: Request, res: Response) => {
   const collectionId = strParam(req.params.id);
-  const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
+  const col = await db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
     return;
@@ -227,28 +227,29 @@ router.post('/:id/sketches', (req: Request, res: Response) => {
     return;
   }
   if (tierId) {
-    const tier = db.prepare('SELECT id FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId);
+    const tier = await db.prepare('SELECT id FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId);
     if (!tier) {
       res.status(400).json({ error: 'Tier does not belong to this collection' });
       return;
     }
   }
   const now = new Date().toISOString();
-  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM sketch_collections WHERE collection_id = ?').get(collectionId) as { next: number };
+  const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM sketch_collections WHERE collection_id = ?').get(collectionId) as { next: number };
   let nextOrder = maxOrder.next;
-  const insert = db.prepare(
-    'INSERT OR IGNORE INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  );
+  const insertSql = process.env.DATABASE_URL
+    ? 'INSERT INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sketch_id, collection_id) DO NOTHING'
+    : 'INSERT OR IGNORE INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)';
+  const insert = db.prepare(insertSql);
   for (const sketchId of sketchIds) {
-    insert.run(uuidv4(), sketchId, collectionId, tierId ?? null, nextOrder++, now);
+    await insert.run(uuidv4(), sketchId, collectionId, tierId ?? null, nextOrder++, now);
   }
-  db.prepare('UPDATE collections SET updated_at = ? WHERE id = ?').run(now, collectionId);
+  await db.prepare('UPDATE collections SET updated_at = ? WHERE id = ?').run(now, collectionId);
 
-  const addedSketches = sketchIds.map((sid) => {
-    const sk = db.prepare('SELECT id, title FROM sketches WHERE id = ?').get(sid) as { id: string; title: string } | undefined;
+  const addedSketches = await Promise.all(sketchIds.map(async (sid) => {
+    const sk = await db.prepare('SELECT id, title FROM sketches WHERE id = ?').get(sid) as { id: string; title: string } | undefined;
     return { id: sid, title: sk?.title ?? 'Unknown' };
-  });
-  createActivity('sketches_added', 'collection', collectionId, {
+  }));
+  await createActivity('sketches_added', 'collection', collectionId, {
     collectionName: col.name,
     count: sketchIds.length,
     sketches: JSON.stringify(addedSketches),
@@ -257,19 +258,19 @@ router.post('/:id/sketches', (req: Request, res: Response) => {
 });
 
 // Remove a sketch from a collection
-router.delete('/:id/sketches/:sketchId', (req: Request, res: Response) => {
+router.delete('/:id/sketches/:sketchId', async (req: Request, res: Response) => {
   const collectionId = strParam(req.params.id);
   const sketchId = strParam(req.params.sketchId);
-  db.prepare('DELETE FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').run(collectionId, sketchId);
-  db.prepare('UPDATE collections SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), collectionId);
+  await db.prepare('DELETE FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').run(collectionId, sketchId);
+  await db.prepare('UPDATE collections SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), collectionId);
   res.status(204).send();
 });
 
 // Update a sketch's tier/sort_order within a collection
-router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
+router.patch('/:id/sketches/:sketchId', async (req: Request, res: Response) => {
   const collectionId = strParam(req.params.id);
   const sketchId = strParam(req.params.sketchId);
-  const scRow = db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow | undefined;
+  const scRow = await db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow | undefined;
   if (!scRow) {
     res.status(404).json({ error: 'Sketch not in this collection' });
     return;
@@ -281,7 +282,7 @@ router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
 
   if (tierId !== undefined) {
     if (tierId !== null) {
-      const tier = db.prepare('SELECT id FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId);
+      const tier = await db.prepare('SELECT id FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId);
       if (!tier) {
         res.status(400).json({ error: 'Tier does not belong to this collection' });
         return;
@@ -296,14 +297,14 @@ router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
   }
   if (updates.length > 0) {
     values.push(collectionId, sketchId);
-    db.prepare(`UPDATE sketch_collections SET ${updates.join(', ')} WHERE collection_id = ? AND sketch_id = ?`).run(...values);
+    await db.prepare(`UPDATE sketch_collections SET ${updates.join(', ')} WHERE collection_id = ? AND sketch_id = ?`).run(...values);
   }
 
   if (tierId !== undefined && tierId !== oldTierId) {
-    const sketch = db.prepare('SELECT title FROM sketches WHERE id = ?').get(sketchId) as { title: string } | undefined;
-    const col = db.prepare('SELECT name FROM collections WHERE id = ?').get(collectionId) as { name: string } | undefined;
-    const newTierLabel = tierId ? (db.prepare('SELECT label FROM collection_tiers WHERE id = ?').get(tierId) as { label: string } | undefined)?.label ?? 'Unknown' : 'Unassigned';
-    createActivity('tier_move', 'sketch', sketchId, {
+    const sketch = await db.prepare('SELECT title FROM sketches WHERE id = ?').get(sketchId) as { title: string } | undefined;
+    const col = await db.prepare('SELECT name FROM collections WHERE id = ?').get(collectionId) as { name: string } | undefined;
+    const newTierLabel = tierId ? (await db.prepare('SELECT label FROM collection_tiers WHERE id = ?').get(tierId) as { label: string } | undefined)?.label ?? 'Unknown' : 'Unassigned';
+    await createActivity('tier_move', 'sketch', sketchId, {
       sketchTitle: sketch?.title ?? 'Unknown',
       collectionId,
       collectionName: col?.name ?? 'Unknown',
@@ -311,7 +312,7 @@ router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
     });
   }
 
-  const updated = db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow;
+  const updated = await db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow;
   res.json({
     id: updated.id,
     sketchId: updated.sketch_id,
@@ -323,19 +324,19 @@ router.patch('/:id/sketches/:sketchId', (req: Request, res: Response) => {
 
 // ── Tier CRUD ──
 
-router.get('/:id/tiers', (req: Request, res: Response) => {
-  const collectionId = req.params.id;
-  const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
+router.get('/:id/tiers', async (req: Request, res: Response) => {
+  const collectionId = strParam(req.params.id);
+  const col = await db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
     return;
   }
-  const tiers = db
+  const tiers = (await db
     .prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC, label ASC')
-    .all(collectionId) as CollectionTierRow[];
-  const tierSketchCounts = db.prepare(
+    .all(collectionId)) as CollectionTierRow[];
+  const tierSketchCounts = (await db.prepare(
     `SELECT tier_id, COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? GROUP BY tier_id`
-  ).all(collectionId) as { tier_id: string | null; cnt: number }[];
+  ).all(collectionId)) as { tier_id: string | null; cnt: number }[];
   const countMap = new Map(tierSketchCounts.map((r) => [r.tier_id, r.cnt]));
   res.json(tiers.map((t) => ({
     id: t.id,
@@ -347,9 +348,9 @@ router.get('/:id/tiers', (req: Request, res: Response) => {
   })));
 });
 
-router.post('/:id/tiers', (req: Request, res: Response) => {
+router.post('/:id/tiers', async (req: Request, res: Response) => {
   const collectionId = req.params.id;
-  const col = db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
+  const col = await db.prepare('SELECT * FROM collections WHERE id = ?').get(collectionId) as CollectionRow | undefined;
   if (!col) {
     res.status(404).json({ error: 'Collection not found' });
     return;
@@ -359,9 +360,9 @@ router.post('/:id/tiers', (req: Request, res: Response) => {
     res.status(400).json({ error: 'label is required' });
     return;
   }
-  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM collection_tiers WHERE collection_id = ?').get(collectionId) as { next: number };
+  const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM collection_tiers WHERE collection_id = ?').get(collectionId) as { next: number };
   const id = uuidv4();
-  db.prepare('INSERT INTO collection_tiers (id, collection_id, label, sort_order, color) VALUES (?, ?, ?, ?, ?)').run(
+  await db.prepare('INSERT INTO collection_tiers (id, collection_id, label, sort_order, color) VALUES (?, ?, ?, ?, ?)').run(
     id, collectionId, label.trim(), maxOrder.next, color ?? null
   );
   res.status(201).json({
@@ -374,9 +375,10 @@ router.post('/:id/tiers', (req: Request, res: Response) => {
   });
 });
 
-router.put('/:id/tiers/:tierId', (req: Request, res: Response) => {
-  const { id: collectionId, tierId } = req.params;
-  const tier = db.prepare('SELECT * FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId) as CollectionTierRow | undefined;
+router.put('/:id/tiers/:tierId', async (req: Request, res: Response) => {
+  const collectionId = strParam(req.params.id);
+  const tierId = strParam(req.params.tierId);
+  const tier = await db.prepare('SELECT * FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId) as CollectionTierRow | undefined;
   if (!tier) {
     res.status(404).json({ error: 'Tier not found' });
     return;
@@ -389,10 +391,10 @@ router.put('/:id/tiers/:tierId', (req: Request, res: Response) => {
   if (color !== undefined) { updates.push('color = ?'); values.push(color); }
   if (updates.length > 0) {
     values.push(tierId);
-    db.prepare(`UPDATE collection_tiers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    await db.prepare(`UPDATE collection_tiers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   }
-  const updated = db.prepare('SELECT * FROM collection_tiers WHERE id = ?').get(tierId) as CollectionTierRow;
-  const cnt = db.prepare('SELECT COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? AND tier_id = ?').get(collectionId, tierId) as { cnt: number };
+  const updated = await db.prepare('SELECT * FROM collection_tiers WHERE id = ?').get(tierId) as CollectionTierRow;
+  const cnt = await db.prepare('SELECT COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? AND tier_id = ?').get(collectionId, tierId) as { cnt: number };
   res.json({
     id: updated.id,
     collectionId: updated.collection_id,
@@ -403,21 +405,22 @@ router.put('/:id/tiers/:tierId', (req: Request, res: Response) => {
   });
 });
 
-router.delete('/:id/tiers/:tierId', (req: Request, res: Response) => {
-  const { id: collectionId, tierId } = req.params;
-  const tier = db.prepare('SELECT * FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId) as CollectionTierRow | undefined;
+router.delete('/:id/tiers/:tierId', async (req: Request, res: Response) => {
+  const collectionId = strParam(req.params.id);
+  const tierId = strParam(req.params.tierId);
+  const tier = await db.prepare('SELECT * FROM collection_tiers WHERE id = ? AND collection_id = ?').get(tierId, collectionId) as CollectionTierRow | undefined;
   if (!tier) {
     res.status(404).json({ error: 'Tier not found' });
     return;
   }
-  db.prepare('UPDATE sketch_collections SET tier_id = NULL WHERE tier_id = ?').run(tierId);
-  db.prepare('DELETE FROM collection_tiers WHERE id = ?').run(tierId);
+  await db.prepare('UPDATE sketch_collections SET tier_id = NULL WHERE tier_id = ?').run(tierId);
+  await db.prepare('DELETE FROM collection_tiers WHERE id = ?').run(tierId);
   res.status(204).send();
 });
 
 // Bulk reorder tiers
-router.put('/:id/tiers-reorder', (req: Request, res: Response) => {
-  const collectionId = req.params.id;
+router.put('/:id/tiers-reorder', async (req: Request, res: Response) => {
+  const collectionId = strParam(req.params.id);
   const { tierIds } = req.body as { tierIds?: string[] };
   if (!Array.isArray(tierIds)) {
     res.status(400).json({ error: 'tierIds array is required' });
@@ -425,10 +428,10 @@ router.put('/:id/tiers-reorder', (req: Request, res: Response) => {
   }
   const update = db.prepare('UPDATE collection_tiers SET sort_order = ? WHERE id = ? AND collection_id = ?');
   for (let i = 0; i < tierIds.length; i++) {
-    update.run(i, tierIds[i], collectionId);
+    await update.run(i, tierIds[i], collectionId);
   }
-  const tiers = db.prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC').all(collectionId) as CollectionTierRow[];
-  const tierSketchCounts = db.prepare(
+  const tiers = await db.prepare('SELECT * FROM collection_tiers WHERE collection_id = ? ORDER BY sort_order ASC').all(collectionId) as CollectionTierRow[];
+  const tierSketchCounts = await db.prepare(
     `SELECT tier_id, COUNT(*) as cnt FROM sketch_collections WHERE collection_id = ? GROUP BY tier_id`
   ).all(collectionId) as { tier_id: string | null; cnt: number }[];
   const countMap = new Map(tierSketchCounts.map((r) => [r.tier_id, r.cnt]));

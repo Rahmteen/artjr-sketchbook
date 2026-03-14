@@ -41,22 +41,22 @@ function melodyRowToApi(row: MelodyRow) {
   };
 }
 
-router.get('/sketch/:sketchId', (req: Request, res: Response) => {
+router.get('/sketch/:sketchId', async (req: Request, res: Response) => {
   const sketchId = strParam(req.params.sketchId);
-  const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
+  const sketch = await db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
   }
-  const rows = db
+  const rows = (await db
     .prepare('SELECT * FROM melodies WHERE sketch_id = ? ORDER BY sort_order ASC, created_at ASC')
-    .all(sketchId) as MelodyRow[];
+    .all(sketchId)) as MelodyRow[];
   res.json(rows.map(melodyRowToApi));
 });
 
 router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res: Response) => {
   const sketchId = strParam(req.params.sketchId);
-  const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
+  const sketch = await db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -76,9 +76,9 @@ router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res
   const durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
   const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
   const now = new Date().toISOString();
-  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM melodies WHERE sketch_id = ?').get(sketchId) as { next: number };
+  const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM melodies WHERE sketch_id = ?').get(sketchId) as { next: number };
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO melodies (id, sketch_id, storage_key, file_name, mime_type, file_size_bytes, duration_seconds, bpm, label, color, offset_ms, sort_order, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -98,12 +98,13 @@ router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res
     now
   );
 
-  const row = db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow;
+  const row = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow;
   res.status(201).json(melodyRowToApi(row));
 });
 
 router.get('/:id/audio', async (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM melodies WHERE id = ?').get(req.params.id) as MelodyRow | undefined;
+  const id = strParam(req.params.id);
+  const row = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Melody not found' });
     return;
@@ -120,8 +121,9 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
   });
 });
 
-router.patch('/:id', (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM melodies WHERE id = ?').get(req.params.id) as MelodyRow | undefined;
+router.patch('/:id', async (req: Request, res: Response) => {
+  const id = strParam(req.params.id);
+  const row = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Melody not found' });
     return;
@@ -145,22 +147,23 @@ router.patch('/:id', (req: Request, res: Response) => {
   if (updates.length > 0) {
     updates.push('updated_at = ?');
     values.push(new Date().toISOString());
-    values.push(req.params.id);
-    db.prepare(`UPDATE melodies SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    values.push(id);
+    await db.prepare(`UPDATE melodies SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   }
 
-  const updated = db.prepare('SELECT * FROM melodies WHERE id = ?').get(req.params.id) as MelodyRow;
+  const updated = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow;
   res.json(melodyRowToApi(updated));
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM melodies WHERE id = ?').get(req.params.id) as MelodyRow | undefined;
+router.delete('/:id', async (req: Request, res: Response) => {
+  const id = strParam(req.params.id);
+  const row = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow | undefined;
   if (!row) {
     res.status(404).json({ error: 'Melody not found' });
     return;
   }
   deleteFile(row.storage_key);
-  db.prepare('DELETE FROM melodies WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM melodies WHERE id = ?').run(id);
   res.status(204).send();
 });
 

@@ -4,7 +4,7 @@ import type { ActivityRow } from '../db.js';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const entityType = req.query.entityType as string | undefined;
@@ -40,20 +40,20 @@ router.get('/', (req: Request, res: Response) => {
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const total = (db.prepare(`SELECT COUNT(*) as c FROM activities ${where}`).get(...params) as { c: number }).c;
-  const rows = db
+  const total = (await db.prepare(`SELECT COUNT(*) as c FROM activities ${where}`).get(...params) as { c: number }).c;
+  const rows = (await db
     .prepare(`SELECT * FROM activities ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
-    .all(...params, limit, offset) as ActivityRow[];
+    .all(...params, limit, offset)) as ActivityRow[];
 
-  const activities = rows.map((row) => {
+  const activities = await Promise.all(rows.map(async (row) => {
     let exists = false;
     if (row.entity_id) {
       if (row.entity_type === 'sketch') {
-        exists = !!(db.prepare('SELECT 1 FROM sketches WHERE id = ?').get(row.entity_id));
+        exists = !!(await db.prepare('SELECT 1 FROM sketches WHERE id = ?').get(row.entity_id));
       } else if (row.entity_type === 'collection') {
-        exists = !!(db.prepare('SELECT 1 FROM collections WHERE id = ?').get(row.entity_id));
+        exists = !!(await db.prepare('SELECT 1 FROM collections WHERE id = ?').get(row.entity_id));
       } else if (row.entity_type === 'reference_audio') {
-        exists = !!(db.prepare('SELECT 1 FROM reference_audio WHERE id = ?').get(row.entity_id));
+        exists = !!(await db.prepare('SELECT 1 FROM reference_audio WHERE id = ?').get(row.entity_id));
       }
     }
 
@@ -68,7 +68,7 @@ router.get('/', (req: Request, res: Response) => {
       exists,
       createdAt: row.created_at,
     };
-  });
+  }));
   res.json({ activities, total });
 });
 

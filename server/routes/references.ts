@@ -5,8 +5,9 @@ import type { ReferenceRow } from '../db.js';
 
 const router = Router();
 
-router.get('/sketch/:sketchId', (req: Request, res: Response) => {
-  const refs = db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ? ORDER BY created_at').all(req.params.sketchId) as ReferenceRow[];
+router.get('/sketch/:sketchId', async (req: Request, res: Response) => {
+  const sketchId = Array.isArray(req.params.sketchId) ? req.params.sketchId[0] : req.params.sketchId ?? '';
+  const refs = (await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ? ORDER BY created_at').all(sketchId)) as ReferenceRow[];
   res.json(refs.map((r) => ({
     id: r.id,
     sketchId: r.sketch_id,
@@ -19,9 +20,9 @@ router.get('/sketch/:sketchId', (req: Request, res: Response) => {
   })));
 });
 
-router.post('/sketch/:sketchId', (req: Request, res: Response) => {
-  const sketchId = req.params.sketchId;
-  const sketch = db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
+router.post('/sketch/:sketchId', async (req: Request, res: Response) => {
+  const sketchId = Array.isArray(req.params.sketchId) ? req.params.sketchId[0] : req.params.sketchId ?? '';
+  const sketch = await db.prepare('SELECT id FROM sketches WHERE id = ?').get(sketchId);
   if (!sketch) {
     res.status(404).json({ error: 'Sketch not found' });
     return;
@@ -51,7 +52,7 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   }
   const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sketch_references (id, sketch_id, type, url, target_sketch_id, reference_audio_id, label, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -64,7 +65,7 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
     label || null,
     now
   );
-  const row = db.prepare('SELECT * FROM sketch_references WHERE id = ?').get(id) as ReferenceRow;
+  const row = await db.prepare('SELECT * FROM sketch_references WHERE id = ?').get(id) as ReferenceRow;
   res.status(201).json({
     id: row.id,
     sketchId: row.sketch_id,
@@ -77,10 +78,15 @@ router.post('/sketch/:sketchId', (req: Request, res: Response) => {
   });
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const r = db.prepare('DELETE FROM sketch_references WHERE id = ?').run(req.params.id);
-  if (r.changes === 0) res.status(404).json({ error: 'Reference not found' });
-  else res.status(204).send();
+router.delete('/:id', async (req: Request, res: Response) => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+  const row = await db.prepare('SELECT id FROM sketch_references WHERE id = ?').get(id);
+  if (!row) {
+    res.status(404).json({ error: 'Reference not found' });
+    return;
+  }
+  await db.prepare('DELETE FROM sketch_references WHERE id = ?').run(id);
+  res.status(204).send();
 });
 
 export default router;
