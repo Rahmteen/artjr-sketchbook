@@ -78,16 +78,21 @@ In **Vercel** → your project → **Deployments** → select a deployment → *
 
 ### Debug: upload / “The page could not be found” (NOT_FOUND) on sketch upload
 
-1. **Check function logs** (Vercel → Deployments → your deployment → **Functions** → open the API function log). Trigger an upload and look for:
-   - **`[api] POST path= /api/upload/sketch`** – request reached Express. If you never see this, the 404 is from Vercel (request not reaching the app; check URL and that the deploy includes the API).
+1. **Client logs (browser console):** Look for **`[upload client] POST /api/upload/sketch`** and **`[upload client] response 404`** (and error body) so you see what the client sent and what it got back.
+
+2. **Function logs** (Vercel → Deployments → your deployment → **Functions** → open the API function log). Trigger an upload and look for, in order:
+   - **`[vercel] handler invoked POST /api/upload/sketch`** – If you **never** see this, the 404 is from Vercel before your function runs (routing/build/config). The request is not reaching the Node handler.
+   - **`[api] POST path= /api/upload/sketch`** – request reached Express.
    - **`[upload] POST /sketch reached | hasFile= true`** – upload route ran and multer received a file.
    - **`[upload] POST /sketch success`** – upload and DB/storage succeeded.
    - **`[upload] POST /sketch error:`** – server-side error (message and stack in logs).
    - **`[api] 404 no matching route`** – path didn’t match any route (log shows `path=` and `url=`).
 
-2. **Vercel request body limit:** Serverless functions have a **4.5 MB** request body limit. Larger uploads get **413** (or may fail before reaching the app). For files &gt; 4.5 MB use direct upload to Supabase Storage from the client (e.g. presigned URL or Supabase client with RLS) and then call your API to register the sketch; the repo does not implement that flow yet.
+   If **`[vercel] handler invoked`** never appears: the 404 is at Vercel’s edge. Check that the repo has `api/[[...path]].ts`, the build does not exclude `api/`, and no rewrite sends `/api/*` elsewhere. Redeploy and re-check logs.
 
-3. **Ensure storage is configured:** Set **`USE_SUPABASE_STORAGE=true`** and **`SUPABASE_URL`** / **`SUPABASE_SERVICE_ROLE_KEY`** so files go to Supabase Storage instead of local disk (which is read-only on Vercel).
+3. **Vercel request body limit:** Serverless functions have a **4.5 MB** request body limit. Larger uploads get **413** (or may fail before reaching the app). For files &gt; 4.5 MB use direct upload to Supabase Storage from the client (e.g. presigned URL or Supabase client with RLS) and then call your API to register the sketch; the repo does not implement that flow yet.
+
+4. **Ensure storage is configured:** Set **`USE_SUPABASE_STORAGE=true`** and **`SUPABASE_URL`** / **`SUPABASE_SERVICE_ROLE_KEY`** so files go to Supabase Storage instead of local disk (which is read-only on Vercel).
 
 ### Fix `getaddrinfo ENOTFOUND db.xxx.supabase.co` (Option B only)
 

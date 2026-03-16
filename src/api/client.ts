@@ -162,9 +162,34 @@ export const sketchesApi = {
   delete: (id: string) => fetch(`${API}/sketches/${id}`, { method: 'DELETE' }).then((r) => handleRes<void>(r)),
 };
 
+const UPLOAD_DEBUG = true; // set false to reduce console noise
+
 export const uploadApi = {
-  sketch: (formData: FormData) =>
-    fetch(`${API}/upload/sketch`, { method: 'POST', body: formData }).then((r) => handleRes<ApiSketch>(r)),
+  sketch: (formData: FormData) => {
+    const url = `${API}/upload/sketch`;
+    if (UPLOAD_DEBUG) {
+      const file = formData.get('file');
+      console.log('[upload client] POST', url, '| file=', file instanceof File ? { name: file.name, size: file.size, type: file.type } : 'none', '| formData keys=', [...formData.keys()]);
+    }
+    return fetch(url, { method: 'POST', body: formData }).then((r) => {
+      if (UPLOAD_DEBUG || !r.ok) {
+        console.log('[upload client] response', r.status, r.statusText, '| url=', r.url);
+      }
+      if (!r.ok) {
+        return r.text().then((text) => {
+          console.error('[upload client] error body:', text.slice(0, 500));
+          try {
+            const err = JSON.parse(text);
+            throw new Error((err as { error?: string }).error ?? text || r.statusText);
+          } catch (e) {
+            if (e instanceof Error && e.message !== r.statusText) throw e;
+            throw new Error(text || r.statusText);
+          }
+        });
+      }
+      return r.json() as Promise<ApiSketch>;
+    });
+  },
   replaceSketch: (id: string, formData: FormData) =>
     fetch(`${API}/upload/sketch/replace/${id}`, { method: 'POST', body: formData }).then((r) => handleRes<ApiSketch>(r)),
   reference: (formData: FormData) =>
