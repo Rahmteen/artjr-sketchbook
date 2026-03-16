@@ -38,7 +38,7 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
 4. **Create the database schema and RPCs in Supabase (once):**  
    In Supabase: **SQL Editor** → New query → paste the contents of **`supabase-schema.sql`** from this repo → Run.  
    This creates all tables and the two RPCs (`run_sql_query`, `run_sql_exec`) used by the API. Without this step, the API will fail when handling requests.  
-   If RPC calls return 500 (PGRST202) after creating or updating the functions, run **`NOTIFY pgrst, 'reload schema';`** in the SQL Editor so PostgREST picks up the new signatures.
+   **After** running the schema (or any change to those RPCs), run in the SQL Editor: **`NOTIFY pgrst, 'reload schema';`** so PostgREST reloads its schema cache. Otherwise you may get 500s with PGRST202 ("Could not find the function ... in the schema cache").
 
 5. **Redeploy** after saving env vars so the build and runtime use them.
 
@@ -49,6 +49,51 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
 - **Uploads:** Use **Supabase Storage** on Vercel (local disk is read-only). Set `USE_SUPABASE_STORAGE=true` and the same `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Troubleshooting
+
+### 500 / PGRST202: "Could not find the function ... in the schema cache"
+
+The API calls Supabase RPCs `run_sql_query` and `run_sql_exec` with parameters **(params, query)**. PostgREST must see those exact function signatures in its schema cache. If you still have the old (query, params) definitions or the cache wasn’t reloaded, you get 404/500 and PGRST202.
+
+**Fix in one go (same project as `SUPABASE_URL` in Vercel):**
+
+1. Open **Supabase Dashboard** → project that matches your `SUPABASE_URL` (e.g. `https://xxxx.supabase.co`).
+2. **SQL Editor** → New query.
+3. Paste and run the following (it updates both RPCs and reloads the schema cache):
+
+```sql
+-- RPCs: params first, query second (required for PostgREST). Params passed as single array; $1,$2 in query become $1[1],$1[2].
+CREATE OR REPLACE FUNCTION run_sql_query(params text[], query text)
+RETURNS SETOF jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_sql text;
+BEGIN
+  v_sql := regexp_replace(query, '\$([0-9]+)', '$1[\1]', 'g');
+  RETURN QUERY EXECUTE (
+    'SELECT row_to_json(r)::jsonb FROM (' || v_sql || ') AS r'
+  ) USING params;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION run_sql_exec(params text[], query text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_sql text;
+BEGIN
+  v_sql := regexp_replace(query, '\$([0-9]+)', '$1[\1]', 'g');
+  EXECUTE v_sql USING params;
+END;
+$$;
+
+NOTIFY pgrst, 'reload schema';
+```
+
+4. Retry the app (no redeploy needed). If 500s persist, confirm you’re in the **same** Supabase project as the one in Vercel’s `SUPABASE_URL`.
 
 ### Debug: which DB mode is running?
 

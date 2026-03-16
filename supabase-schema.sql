@@ -133,15 +133,19 @@ CREATE INDEX IF NOT EXISTS idx_sketch_tags_tag ON sketch_tags(tag_id);
 
 -- RPCs for Supabase REST-only DB (USE_SUPABASE_DB=true). Server calls these via supabase.rpc().
 -- run_sql_query: for SELECT (prepare().get/all). Returns each row as jsonb.
+-- EXECUTE USING does not support VARIADIC; pass params as single array and use $1[1], $1[2], ...
 CREATE OR REPLACE FUNCTION run_sql_query(params text[], query text)
 RETURNS SETOF jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_sql text;
 BEGIN
+  v_sql := regexp_replace(query, '\$([0-9]+)', '$1[\1]', 'g');
   RETURN QUERY EXECUTE (
-    'SELECT row_to_json(r)::jsonb FROM (' || query || ') AS r'
-  ) USING variadic params;
+    'SELECT row_to_json(r)::jsonb FROM (' || v_sql || ') AS r'
+  ) USING params;
 END;
 $$;
 
@@ -151,7 +155,10 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_sql text;
 BEGIN
-  EXECUTE query USING variadic params;
+  v_sql := regexp_replace(query, '\$([0-9]+)', '$1[\1]', 'g');
+  EXECUTE v_sql USING params;
 END;
 $$;

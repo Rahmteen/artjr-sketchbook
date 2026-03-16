@@ -65,7 +65,7 @@ router.post('/sketch', upload.single('file'), async (req: Request, res: Response
   const now = new Date().toISOString();
   await db.prepare(
     `INSERT INTO sketches (id, group_id, version, title, description, storage_key, file_name, mime_type, file_size_bytes, bpm, duration_seconds, key, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES ($1, $2, $3::integer, $4, $5, $6, $7, $8, $9::integer, $10::real, $11::real, $12, $13, $14)`
   ).run(
     id,
     groupId,
