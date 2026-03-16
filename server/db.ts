@@ -118,8 +118,8 @@ async function getPg(): Promise<import('pg').Pool> {
           if (parsed.hostname.startsWith('db.') && parsed.hostname.endsWith('.supabase.co')) {
             throw new Error(
               'On Vercel, the direct Supabase URL (db.xxx.supabase.co) fails with ENOTFOUND. ' +
-                'Set DATABASE_POOLER_URL in Vercel to the Connection pooler URL: Supabase → Project Settings → Database → Connection string → Transaction mode (port 6543, host aws-0-*.pooler.supabase.com). ' +
-                'Add ?pgbouncer=true to the pooler URL. See DEPLOYMENT.md.'
+                'Use Supabase REST instead (no pooler): in Vercel set USE_SUPABASE_DB=true, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY; you can remove DATABASE_URL. ' +
+                'Or use the pooler: set DATABASE_POOLER_URL to the Transaction mode URL (host aws-0-*.pooler.supabase.com, port 6543, ?pgbouncer=true). See DEPLOYMENT.md.'
             );
           }
         } catch (e) {
@@ -128,7 +128,9 @@ async function getPg(): Promise<import('pg').Pool> {
       }
       url = directUrl;
     } else {
-      throw new Error('DATABASE_URL is required for Postgres. On Vercel, set DATABASE_POOLER_URL (pooler URL, port 6543).');
+      throw new Error(
+        'DATABASE_URL is required for Postgres. On Vercel, use USE_SUPABASE_DB=true with SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (REST, no pooler), or set DATABASE_POOLER_URL. See DEPLOYMENT.md.'
+      );
     }
 
     const isServerless = Boolean(process.env.VERCEL);
