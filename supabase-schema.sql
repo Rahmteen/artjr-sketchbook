@@ -130,3 +130,28 @@ CREATE TABLE IF NOT EXISTS sketch_tags (
 );
 CREATE INDEX IF NOT EXISTS idx_sketch_tags_sketch ON sketch_tags(sketch_id);
 CREATE INDEX IF NOT EXISTS idx_sketch_tags_tag ON sketch_tags(tag_id);
+
+-- RPCs for Supabase REST-only DB (USE_SUPABASE_DB=true). Server calls these via supabase.rpc().
+-- run_sql_query: for SELECT (prepare().get/all). Returns each row as jsonb.
+CREATE OR REPLACE FUNCTION run_sql_query(query text, params text[])
+RETURNS SETOF jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY EXECUTE (
+    'SELECT row_to_json(r)::jsonb FROM (' || query || ') AS r'
+  ) USING variadic params;
+END;
+$$;
+
+-- run_sql_exec: for INSERT/UPDATE/DELETE (prepare().run). Returns void.
+CREATE OR REPLACE FUNCTION run_sql_exec(query text, params text[])
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  EXECUTE query USING variadic params;
+END;
+$$;

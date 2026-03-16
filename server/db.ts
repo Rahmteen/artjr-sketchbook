@@ -1,9 +1,11 @@
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
 import { createRequire } from 'module';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const require = createRequire(import.meta.url);
-const usePg = Boolean(process.env.DATABASE_URL || (process.env.VERCEL && process.env.DATABASE_POOLER_URL));
+const useSupabaseDb = process.env.USE_SUPABASE_DB === 'true';
+const usePg = !useSupabaseDb && Boolean(process.env.DATABASE_URL || (process.env.VERCEL && process.env.DATABASE_POOLER_URL));
 
 /** Convert ? placeholders to $1, $2 for pg */
 function toPgParams(sql: string): string {
@@ -73,10 +75,36 @@ let pgPool: import('pg').Pool | null = null;
 async function getPg(): Promise<import('pg').Pool> {
   if (!pgPool) {
     const { default: pg } = await import('pg');
-    // On Vercel, use pooler URL to avoid ENOTFOUND with direct db.xxx.supabase.co
-    const url =
-      (process.env.VERCEL && process.env.DATABASE_POOLER_URL) || process.env.DATABASE_URL;
-    if (!url) throw new Error('DATABASE_URL or (on Vercel) DATABASE_POOLER_URL is required for Postgres');
+    // On Vercel, the direct Supabase host (db.xxx.supabase.co) often fails with ENOTFOUND (IPv6/DNS).
+    // We must use the Connection pooler (Transaction mode, port 6543, host aws-0-*.pooler.supabase.com).
+    const poolerUrl = process.env.DATABASE_POOLER_URL;
+    const directUrl = process.env.DATABASE_URL;
+    const onVercel = Boolean(process.env.VERCEL);
+
+    let url: string;
+    if (onVercel && poolerUrl) {
+      url = poolerUrl;
+    } else if (directUrl) {
+      if (onVercel) {
+        try {
+          const parsed = new URL(directUrl);
+          // Direct Supabase host often unreachable from Vercel serverless
+          if (parsed.hostname.startsWith('db.') && parsed.hostname.endsWith('.supabase.co')) {
+            throw new Error(
+              'On Vercel, the direct Supabase URL (db.xxx.supabase.co) fails with ENOTFOUND. ' +
+                'Set DATABASE_POOLER_URL in Vercel to the Connection pooler URL: Supabase → Project Settings → Database → Connection string → Transaction mode (port 6543, host aws-0-*.pooler.supabase.com). ' +
+                'Add ?pgbouncer=true to the pooler URL. See DEPLOYMENT.md.'
+            );
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith('On Vercel')) throw e;
+        }
+      }
+      url = directUrl;
+    } else {
+      throw new Error('DATABASE_URL is required for Postgres. On Vercel, set DATABASE_POOLER_URL (pooler URL, port 6543).');
+    }
+
     const isServerless = Boolean(process.env.VERCEL);
     pgPool = new pg.Pool({
       connectionString: url,
@@ -90,28 +118,76 @@ async function getPg(): Promise<import('pg').Pool> {
   return pgPool;
 }
 
+// --- Supabase REST path (no pg / no pooler) ---
+let supabaseDbClient: SupabaseClient | null = null;
+
+function getSupabaseDb(): SupabaseClient {
+  if (!supabaseDbClient) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error(
+        'USE_SUPABASE_DB=true requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. ' +
+          'You do not need DATABASE_URL or DATABASE_POOLER_URL when using Supabase REST for DB.'
+      );
+    }
+    supabaseDbClient = createClient(url, key);
+  }
+  return supabaseDbClient;
+}
+
 // --- Unified async db interface ---
 export const db = {
   prepare(sql: string) {
     return {
-      get: (...params: unknown[]): Promise<Row | undefined> => {
-        if (usePg) {
-          return getPg().then((pool) => pool.query(toPgParams(sql), params).then((r) => r.rows[0] as Row | undefined));
+      get: async (...params: unknown[]): Promise<Row | undefined> => {
+        if (useSupabaseDb) {
+          const { data, error } = await getSupabaseDb().rpc('run_sql_query', {
+            query: toPgParams(sql),
+            params: params.map(String),
+          });
+          if (error) throw error;
+          const row = data != null && Array.isArray(data) ? data[0] : undefined;
+          return row != null ? (row as Row) : undefined;
         }
-        return Promise.resolve(getSqlite().prepare(sql).get(...params) as Row | undefined) as Promise<Row | undefined>;
+        if (usePg) {
+          const pool = await getPg();
+          const r = await pool.query(toPgParams(sql), params);
+          return r.rows[0] as Row | undefined;
+        }
+        return getSqlite().prepare(sql).get(...params) as Row | undefined;
       },
-      all: (...params: unknown[]): Promise<Row[]> => {
-        if (usePg) {
-          return getPg().then((pool) => pool.query(toPgParams(sql), params).then((r) => r.rows as Row[]));
+      all: async (...params: unknown[]): Promise<Row[]> => {
+        if (useSupabaseDb) {
+          const { data, error } = await getSupabaseDb().rpc('run_sql_query', {
+            query: toPgParams(sql),
+            params: params.map(String),
+          });
+          if (error) throw error;
+          return Array.isArray(data) ? (data as Row[]) : [];
         }
-        return Promise.resolve(getSqlite().prepare(sql).all(...params) as Row[]) as Promise<Row[]>;
+        if (usePg) {
+          const pool = await getPg();
+          const r = await pool.query(toPgParams(sql), params);
+          return r.rows as Row[];
+        }
+        return getSqlite().prepare(sql).all(...params) as Row[];
       },
-      run: (...params: unknown[]): Promise<void> => {
-        if (usePg) {
-          return getPg().then((pool) => pool.query(toPgParams(sql), params).then(() => undefined));
+      run: async (...params: unknown[]): Promise<void> => {
+        if (useSupabaseDb) {
+          const { error } = await getSupabaseDb().rpc('run_sql_exec', {
+            query: toPgParams(sql),
+            params: params.map(String),
+          });
+          if (error) throw error;
+          return;
         }
-    getSqlite().prepare(sql).run(...params);
-    return Promise.resolve() as Promise<void>;
+        if (usePg) {
+          const pool = await getPg();
+          await pool.query(toPgParams(sql), params);
+          return;
+        }
+        getSqlite().prepare(sql).run(...params);
       },
     };
   },
