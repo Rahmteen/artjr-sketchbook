@@ -67,6 +67,15 @@ Summary: for a production-like deploy on Vercel, use **Supabase Storage** for up
 
 ## Troubleshooting
 
+### Debug: which DB mode is running?
+
+In **Vercel** → your project → **Deployments** → select a deployment → **Functions** → click a serverless function log. On cold start you should see a line like:
+
+`[db] mode= supabase-rest (USE_SUPABASE_DB=true, no pg/pooler) | VERCEL= true | USE_SUPABASE_DB= true ...`
+
+- If you see **`mode= pg`** but you want to use the REST API (no pooler), set **`USE_SUPABASE_DB=true`** in Vercel and ensure **`SUPABASE_URL`** and **`SUPABASE_SERVICE_ROLE_KEY`** are set. You can then remove or leave unset **`DATABASE_URL`** and **`DATABASE_POOLER_URL`** (the app will use Supabase REST for DB).
+- If you see **`mode= supabase-rest`** and still get 500s, check for **`[db] Supabase REST ... error:`** in the same logs (RPC errors from the REST API).
+
 ### Fix `getaddrinfo ENOTFOUND db.xxx.supabase.co` (Option B only)
 
 If you use **Option A (Supabase REST)** with `USE_SUPABASE_DB=true`, you do not use the pooler or a direct DB URL, so this error does not apply.

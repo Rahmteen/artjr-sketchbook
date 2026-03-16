@@ -7,6 +7,30 @@ const require = createRequire(import.meta.url);
 const useSupabaseDb = process.env.USE_SUPABASE_DB === 'true';
 const usePg = !useSupabaseDb && Boolean(process.env.DATABASE_URL || (process.env.VERCEL && process.env.DATABASE_POOLER_URL));
 
+/** One-time log of DB mode at cold start (no secrets). */
+let dbModeLogged = false;
+function logDbMode(): void {
+  if (dbModeLogged) return;
+  dbModeLogged = true;
+  const vercel = Boolean(process.env.VERCEL);
+  const useSupabaseDbRaw = process.env.USE_SUPABASE_DB;
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+  const hasPoolerUrl = Boolean(process.env.DATABASE_POOLER_URL);
+  const hasSupabaseUrl = Boolean(process.env.SUPABASE_URL);
+  const hasServiceRoleKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  let mode: string;
+  if (useSupabaseDb) {
+    mode = 'supabase-rest (USE_SUPABASE_DB=true, no pg/pooler)';
+  } else if (usePg) {
+    mode = `pg (${vercel && hasPoolerUrl ? 'DATABASE_POOLER_URL' : 'DATABASE_URL'})`;
+  } else {
+    mode = 'sqlite';
+  }
+  console.log('[db] mode=', mode, '| VERCEL=', vercel, '| USE_SUPABASE_DB=', useSupabaseDbRaw, '| DATABASE_URL set=', hasDatabaseUrl, '| DATABASE_POOLER_URL set=', hasPoolerUrl, '| SUPABASE_URL set=', hasSupabaseUrl, '| SUPABASE_SERVICE_ROLE_KEY set=', hasServiceRoleKey);
+}
+// Log once when this module is loaded (cold start).
+logDbMode();
+
 /** Convert ? placeholders to $1, $2 for pg */
 function toPgParams(sql: string): string {
   let i = 0;
@@ -74,13 +98,15 @@ let pgPool: import('pg').Pool | null = null;
 
 async function getPg(): Promise<import('pg').Pool> {
   if (!pgPool) {
-    const { default: pg } = await import('pg');
-    // On Vercel, the direct Supabase host (db.xxx.supabase.co) often fails with ENOTFOUND (IPv6/DNS).
-    // We must use the Connection pooler (Transaction mode, port 6543, host aws-0-*.pooler.supabase.com).
     const poolerUrl = process.env.DATABASE_POOLER_URL;
     const directUrl = process.env.DATABASE_URL;
     const onVercel = Boolean(process.env.VERCEL);
-
+    if (onVercel) {
+      console.log('[db] pg pool initializing on Vercel | using', poolerUrl ? 'DATABASE_POOLER_URL' : 'DATABASE_URL', '| hint: set USE_SUPABASE_DB=true to use Supabase REST instead of pg');
+    }
+    const { default: pg } = await import('pg');
+    // On Vercel, the direct Supabase host (db.xxx.supabase.co) often fails with ENOTFOUND (IPv6/DNS).
+    // We must use the Connection pooler (Transaction mode, port 6543, host aws-0-*.pooler.supabase.com).
     let url: string;
     if (onVercel && poolerUrl) {
       url = poolerUrl;
@@ -126,10 +152,17 @@ function getSupabaseDb(): SupabaseClient {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) {
+      console.error('[db] Supabase REST: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
       throw new Error(
         'USE_SUPABASE_DB=true requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. ' +
           'You do not need DATABASE_URL or DATABASE_POOLER_URL when using Supabase REST for DB.'
       );
+    }
+    try {
+      const parsed = new URL(url);
+      console.log('[db] Supabase REST client initializing | host=', parsed.hostname);
+    } catch {
+      console.log('[db] Supabase REST client initializing');
     }
     supabaseDbClient = createClient(url, key);
   }
@@ -146,7 +179,10 @@ export const db = {
             query: toPgParams(sql),
             params: params.map(String),
           });
-          if (error) throw error;
+          if (error) {
+            console.error('[db] Supabase REST run_sql_query error:', error.message, '| code=', error.code, '| details=', error.details);
+            throw error;
+          }
           const row = data != null && Array.isArray(data) ? data[0] : undefined;
           return row != null ? (row as Row) : undefined;
         }
@@ -163,7 +199,10 @@ export const db = {
             query: toPgParams(sql),
             params: params.map(String),
           });
-          if (error) throw error;
+          if (error) {
+            console.error('[db] Supabase REST run_sql_query error:', error.message, '| code=', error.code, '| details=', error.details);
+            throw error;
+          }
           return Array.isArray(data) ? (data as Row[]) : [];
         }
         if (usePg) {
@@ -179,7 +218,10 @@ export const db = {
             query: toPgParams(sql),
             params: params.map(String),
           });
-          if (error) throw error;
+          if (error) {
+            console.error('[db] Supabase REST run_sql_exec error:', error.message, '| code=', error.code, '| details=', error.details);
+            throw error;
+          }
           return;
         }
         if (usePg) {
