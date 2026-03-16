@@ -3,8 +3,13 @@
 import app from '../dist-server/index.js';
 
 export default function handler(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
-  const url = req.url || '';
+  let url = req.url || '';
   const method = req.method || '';
+  // Vercel may pass path without /api prefix; Express mounts routes at /api/* so we need /api in the path.
+  if (url && !url.startsWith('/api')) {
+    url = '/api' + (url.startsWith('/') ? url : '/' + url);
+    (req as import('http').IncomingMessage & { url: string }).url = url;
+  }
   console.log('[vercel] handler invoked', method, url, '| VERCEL=', !!process.env.VERCEL);
   app(req, res);
 }
