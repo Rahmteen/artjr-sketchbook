@@ -37,7 +37,8 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
 
 4. **Create the database schema and RPCs in Supabase (once):**  
    In Supabase: **SQL Editor** → New query → paste the contents of **`supabase-schema.sql`** from this repo → Run.  
-   This creates all tables and the two RPCs (`run_sql_query`, `run_sql_exec`) used by the API. Without this step, the API will fail when handling requests.
+   This creates all tables and the two RPCs (`run_sql_query`, `run_sql_exec`) used by the API. Without this step, the API will fail when handling requests.  
+   If RPC calls return 500 (PGRST202) after creating or updating the functions, run **`NOTIFY pgrst, 'reload schema';`** in the SQL Editor so PostgREST picks up the new signatures.
 
 5. **Redeploy** after saving env vars so the build and runtime use them.
 

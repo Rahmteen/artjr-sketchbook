@@ -133,7 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_sketch_tags_tag ON sketch_tags(tag_id);
 
 -- RPCs for Supabase REST-only DB (USE_SUPABASE_DB=true). Server calls these via supabase.rpc().
 -- run_sql_query: for SELECT (prepare().get/all). Returns each row as jsonb.
-CREATE OR REPLACE FUNCTION run_sql_query(query text, params text[])
+CREATE OR REPLACE FUNCTION run_sql_query(params text[], query text)
 RETURNS SETOF jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -146,7 +146,7 @@ END;
 $$;
 
 -- run_sql_exec: for INSERT/UPDATE/DELETE (prepare().run). Returns void.
-CREATE OR REPLACE FUNCTION run_sql_exec(query text, params text[])
+CREATE OR REPLACE FUNCTION run_sql_exec(params text[], query text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
