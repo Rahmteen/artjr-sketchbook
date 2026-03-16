@@ -180,7 +180,7 @@ export const uploadApi = {
           console.error('[upload client] error body:', text.slice(0, 500));
           try {
             const err = JSON.parse(text);
-            throw new Error((err as { error?: string }).error ?? text || r.statusText);
+            throw new Error(((err as { error?: string }).error ?? text) || r.statusText);
           } catch (e) {
             if (e instanceof Error && e.message !== r.statusText) throw e;
             throw new Error(text || r.statusText);
