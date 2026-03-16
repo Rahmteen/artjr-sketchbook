@@ -82,13 +82,12 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   const id = strParam(req.params.id).trim();
   if (!id) {
-    res.status(404).json({ error: 'Sketch not found' });
+    res.status(404).json({ error: 'Sketch not found', source: 'sketch-not-found' });
     return;
   }
   const row = await db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;
   if (!row) {
-    if (process.env.VERCEL) console.log('[api] GET /api/sketches/:id 404 | id=', id);
-    res.status(404).json({ error: 'Sketch not found' });
+    res.status(404).json({ error: 'Sketch not found', source: 'sketch-not-found', id });
     return;
   }
   const notes = await db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(row.id) as NoteRow[];

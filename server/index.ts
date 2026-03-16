@@ -41,9 +41,10 @@ app.use('/api/tags', tagsRouter);
 app.use('/api/melodies', melodiesRouter);
 
 // Log and respond when no route matches (helps debug 404s)
-app.use('/api', (_req, res) => {
-  console.log('[api] 404 no matching route | path=', _req.path, 'url=', _req.url);
-  res.status(404).json({ error: 'Not found', path: _req.path || _req.url });
+app.use('/api', (req, res) => {
+  const path = req.path || req.url || '';
+  console.log('[api] 404 no matching route | path=', path);
+  res.status(404).json({ error: 'Not found', path, source: 'no-matching-route' });
 });
 
 // Serve static client only when running as a standalone server (not on Vercel)
