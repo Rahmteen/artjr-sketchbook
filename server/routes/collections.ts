@@ -236,9 +236,7 @@ router.post('/:id/sketches', async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM sketch_collections WHERE collection_id = ?').get(collectionId) as { next: number };
   let nextOrder = maxOrder.next;
-  const insertSql = process.env.DATABASE_URL
-    ? 'INSERT INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sketch_id, collection_id) DO NOTHING'
-    : 'INSERT OR IGNORE INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)';
+  const insertSql = 'INSERT INTO sketch_collections (id, sketch_id, collection_id, tier_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (sketch_id, collection_id) DO NOTHING';
   const insert = db.prepare(insertSql);
   for (const sketchId of sketchIds) {
     await insert.run(uuidv4(), sketchId, collectionId, tierId ?? null, nextOrder++, now);

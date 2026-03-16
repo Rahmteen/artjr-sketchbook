@@ -1,6 +1,10 @@
 # Plan: Keep Everything in Supabase, No Pooler (REST-Only DB Access)
 
-## Goal
+**Implemented.** The app now uses Supabase REST only for the database (no SQLite, no pg/pooler). See `server/db.ts` and `supabase-schema.sql` (RPCs `run_sql_query`, `run_sql_exec`). Local and Vercel both require `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+---
+
+## Goal (historical)
 
 - **Single place for everything**: DB, storage, and app config stay in your Supabase project.
 - **No pooler (and no direct Postgres) from Vercel**: The shared pooler stays problematic (ENOTFOUND, connection limits). So we **stop using `pg` from the Express server on Vercel entirely**.

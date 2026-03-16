@@ -5,7 +5,7 @@ A simple, dark-mode platform for ART JR to manage song sketches: upload audio, a
 ## Stack
 
 - **Frontend:** React 18, TypeScript, Vite, React Router, Zustand
-- **Backend:** Express, SQLite (better-sqlite3), local file storage
+- **Backend:** Express, Supabase (REST API for DB; optional Supabase Storage for files)
 - **Gate:** 4-digit code (env `VITE_ENTRY_CODE`, default `1234`)
 
 ## Requirements
@@ -27,27 +27,30 @@ A simple, dark-mode platform for ART JR to manage song sketches: upload audio, a
    npm install
    ```
 
-2. Optional: copy env and set entry code:
+2. Copy env and set Supabase credentials (required):
    ```bash
    cp .env.example .env
-   # Edit .env: set VITE_ENTRY_CODE to your 4-digit code
+   # Edit .env: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Dashboard → Project Settings → API)
+   # Optionally set VITE_ENTRY_CODE (default 1234)
    ```
 
-3. Run backend and frontend (two terminals):
+3. Run the schema once in Supabase: **SQL Editor** → paste contents of **`supabase-schema.sql`** → Run.
+
+4. Run backend and frontend (two terminals):
    ```bash
-   # Terminal 1 – API (creates ./data for SQLite + uploads)
+   # Terminal 1 – API (uses Supabase for DB)
    npm run server
 
    # Terminal 2 – Frontend (proxies /api to backend)
    npm run dev
    ```
 
-4. Open http://localhost:5173, enter the 4-digit code (default `1234`), then use **Upload sketch** to add audio.
+5. Open http://localhost:5173, enter the 4-digit code (default `1234`), then use **Upload sketch** to add audio.
 
 ## Scripts
 
 - `npm run dev` – Vite dev server (frontend only; needs API on 3001)
-- `npm run server` – Express API on port 3001 (SQLite + uploads in `./data`)
+- `npm run server` – Express API on port 3001 (Supabase for DB; uploads to Supabase Storage or `./data/uploads` if not set)
 - `npm run build` – Build frontend to `dist`
 - `npm run preview` – Serve `dist` (API must be run separately for full app)
 
@@ -64,8 +67,5 @@ A simple, dark-mode platform for ART JR to manage song sketches: upload audio, a
 
 ## Data
 
-- SQLite DB and uploaded files live under `./data/` (gitignored). To reset, delete the `data` folder and restart the server.
-
-## Bucket storage (future)
-
-The plan suggested Supabase or Cloudflare R2 for production. The current backend uses local disk; you can swap the storage layer in `server/storage.ts` and keep the same API.
+- **Database:** Supabase (same project for local and production). Run `supabase-schema.sql` once in the Supabase SQL Editor.
+- **Uploads:** With `USE_SUPABASE_STORAGE=true`, files go to your Supabase bucket. Otherwise they go to `./data/uploads` (gitignored).
