@@ -3,6 +3,8 @@
   "buildCommand": "npm run build",
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/catch", "destination": "/api/catch" },
+    { "source": "/api/(.*)", "destination": "/api/catch?path=$1" },
     { "source": "/sketches", "destination": "/index.html" },
     { "source": "/sketches/:path*", "destination": "/index.html" },
     { "source": "/collections", "destination": "/index.html" },
