@@ -39,10 +39,12 @@ router.get('/', async (req: Request, res: Response) => {
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limitParam = params.length + 1;
+  const offsetParam = params.length + 2;
 
   const total = (await db.prepare(`SELECT COUNT(*) as c FROM activities ${where}`).get(...params) as { c: number }).c;
   const rows = (await db
-    .prepare(`SELECT * FROM activities ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .prepare(`SELECT * FROM activities ${where} ORDER BY created_at DESC LIMIT $${limitParam}::integer OFFSET $${offsetParam}::integer`)
     .all(...params, limit, offset)) as ActivityRow[];
 
   const activities = await Promise.all(rows.map(async (row) => {
