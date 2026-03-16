@@ -22,10 +22,14 @@ const upload = multer({
 });
 
 router.post('/sketch', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+  console.log('[upload] POST /sketch reached | hasFile=', !!req.file, '| contentType=', req.headers['content-type']);
   if (!req.file) {
+    console.log('[upload] POST /sketch rejected: no file in request');
     res.status(400).json({ error: 'No file uploaded' });
     return;
   }
+  console.log('[upload] POST /sketch file received | size=', req.file.size, '| mime=', req.file.mimetype);
   if (!isAllowedMime(req.file.mimetype)) {
     res.status(400).json({ error: 'Invalid file type. Audio files only.' });
     return;
@@ -33,8 +37,21 @@ router.post('/sketch', upload.single('file'), async (req: Request, res: Response
   const { title, description, bpm, key, parentSketchId } = req.body as Record<string, string | undefined>;
   const id = uuidv4();
   const ext = getExtension(req.file.mimetype);
-  const durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
-  const storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
+  let durationSeconds: number | undefined;
+  try {
+    durationSeconds = await getAudioDurationFromBuffer(req.file.buffer, req.file.mimetype);
+  } catch (e) {
+    console.error('[upload] getAudioDurationFromBuffer error:', e);
+  }
+  console.log('[upload] POST /sketch saving to storage (key=', id + ext, ')');
+  let storageKey: string;
+  try {
+    storageKey = await saveFile(req.file.buffer, ext, req.file.mimetype);
+  } catch (e) {
+    console.error('[upload] saveFile error:', e);
+    throw e;
+  }
+  console.log('[upload] POST /sketch storage saved | storageKey=', storageKey);
   let version = 1;
   let groupId: string | null = null;
   if (parentSketchId) {
@@ -69,7 +86,14 @@ router.post('/sketch', upload.single('file'), async (req: Request, res: Response
   const notes = await db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(id) as NoteRow[];
   const refs = await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(id) as ReferenceRow[];
   await createActivity('upload', 'sketch', id, { sketchTitle: row.title });
+  console.log('[upload] POST /sketch success | id=', id);
   res.status(201).json(sketchRowToSketch(row, notes, refs));
+} catch (err) {
+  console.error('[upload] POST /sketch error:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Upload failed' });
+  }
+}
 });
 
 router.post('/sketch/replace/:id', upload.single('file'), async (req: Request, res: Response) => {

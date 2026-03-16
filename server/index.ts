@@ -15,6 +15,16 @@ import melodiesRouter from './routes/melodies.js';
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+// Log every request (method + path) to debug routing and 404s on Vercel
+app.use((req, _res, next) => {
+  const path = req.path || req.url?.split('?')[0] || '';
+  const isUpload = path.startsWith('/api/upload') || (req.url && req.url.startsWith('/api/upload'));
+  if (isUpload || process.env.VERCEL) {
+    console.log('[api]', req.method, 'path=', path, 'url=', req.url, '| VERCEL=', Boolean(process.env.VERCEL));
+  }
+  next();
+});
+
 app.use(cors({ origin: true }));
 app.use(express.json());
 
@@ -28,6 +38,12 @@ app.use('/api/activities', activitiesRouter);
 app.use('/api/collections', collectionsRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/melodies', melodiesRouter);
+
+// Log and respond when no route matches (helps debug 404s)
+app.use('/api', (_req, res) => {
+  console.log('[api] 404 no matching route | path=', _req.path, 'url=', _req.url);
+  res.status(404).json({ error: 'Not found', path: _req.path || _req.url });
+});
 
 // Serve static client only when running as a standalone server (not on Vercel)
 if (!process.env.VERCEL && process.env.NODE_ENV !== 'development') {
