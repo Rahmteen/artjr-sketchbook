@@ -4,6 +4,13 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/sketches", "destination": "/index.html" },
+    { "source": "/sketches/:path*", "destination": "/index.html" },
+    { "source": "/collections", "destination": "/index.html" },
+    { "source": "/collections/:path*", "destination": "/index.html" },
+    { "source": "/home", "destination": "/index.html" },
+    { "source": "/timeline", "destination": "/index.html" },
+    { "source": "/s/:path*", "destination": "/index.html" },
+    { "source": "/", "destination": "/index.html" }
   ]
 }
