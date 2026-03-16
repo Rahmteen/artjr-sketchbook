@@ -95,6 +95,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   const refs = await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(row.id) as ReferenceRow[];
   const tagsBySketch = await getTagsForSketches([row.id]);
   const collectionsBySketch = await getCollectionsForSketches([row.id]);
+  if (process.env.VERCEL) console.log('[api] GET /api/sketches/:id 200 | id=', id);
   res.json(
     sketchRowToSketch(row, notes, refs, {
       tags: tagsBySketch.get(row.id) ?? [],
