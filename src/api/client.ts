@@ -164,11 +164,21 @@ export const sketchesApi = {
 
 const UPLOAD_DEBUG = true; // set false to reduce console noise
 
+/** Vercel serverless request body limit (4.5 MB). Larger uploads are rejected before the function runs (404/413). */
+const VERCEL_BODY_LIMIT_BYTES = 4 * 1024 * 1024; // 4 MB safe limit
+
 export const uploadApi = {
   sketch: (formData: FormData) => {
+    const file = formData.get('file');
+    if (file instanceof File && file.size > VERCEL_BODY_LIMIT_BYTES) {
+      return Promise.reject(
+        new Error(
+          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB. Vercel allows up to 4.5 MB per request. Use a smaller file or compress the audio.`
+        )
+      );
+    }
     const url = `${API}/upload/sketch`;
     if (UPLOAD_DEBUG) {
-      const file = formData.get('file');
       console.log('[upload client] POST', url, '| file=', file instanceof File ? { name: file.name, size: file.size, type: file.type } : 'none', '| formData keys=', [...formData.keys()]);
     }
     return fetch(url, { method: 'POST', body: formData }).then((r) => {
