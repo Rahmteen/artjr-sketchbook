@@ -61,8 +61,6 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
   const displayPlaying = useTransport ? transport.isPlaying : false;
   const displayDuration = useTransport ? transport.duration : sketch.durationSeconds ?? 0;
 
-  const [audioError, setAudioError] = useState<string | null>(null);
-
   const hasPeaksAndDuration = !!(sketchPeaks && sketchPeaks.length > 0 && sketch.durationSeconds && sketch.durationSeconds > 0);
   const stablePeaks = useMemo(
     () => hasPeaksAndDuration ? [sketchPeaks!] : undefined,
@@ -84,16 +82,6 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
     barRadius: 1,
     normalize: true,
   });
-
-  useEffect(() => {
-    if (!wavesurfer) return;
-    const onError = (err: Error) => {
-      console.error('[AudioPlayer] decode error:', err);
-      setAudioError('This audio format is not supported by your browser. Try re-uploading as MP3 or WAV.');
-    };
-    wavesurfer.on('error', onError);
-    return () => { wavesurfer.un('error', onError); };
-  }, [wavesurfer]);
 
   useImperativeHandle(ref, () => ({
     seek(seconds: number) {
@@ -224,11 +212,7 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
       </button>
       <div className="min-h-[56px] flex-1 min-w-0 rounded-md overflow-hidden relative">
         <div ref={containerRef} className="min-h-[56px] w-full relative z-0" />
-        {audioError ? (
-          <div className="absolute inset-0 z-20 flex items-center justify-center rounded-md bg-surface/80">
-            <p className="text-xs text-danger px-4 text-center">{audioError}</p>
-          </div>
-        ) : !isReady && !stablePeaks ? (
+        {!isReady && !stablePeaks && (
           <div
             className="absolute inset-0 z-20 flex items-center justify-center rounded-md"
             aria-live="polite"
@@ -236,7 +220,7 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
           >
             <Loader2 size={24} className="animate-spin text-accent" />
           </div>
-        ) : null}
+        )}
       </div>
       <div className={`flex items-center shrink-0 transition-opacity duration-200 ${showAddNote ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="relative">
