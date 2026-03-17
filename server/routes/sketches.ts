@@ -6,6 +6,7 @@ import type { ApiSketchCollection } from '../map.js';
 import { createActivity } from '../activities.js';
 import { strParam } from '../param.js';
 import type { SketchRow, NoteRow, ReferenceRow, SketchTagRow, TagRow } from '../db.js';
+import { computePeaksFromStorage } from './upload.js';
 
 const router = Router();
 
@@ -122,6 +123,8 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
   });
 });
 
+const peaksInFlight = new Set<string>();
+
 router.get('/:id/peaks', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
   const row = await db.prepare('SELECT peaks_json, peaks_status FROM sketches WHERE id = ?').get(id) as { peaks_json: number[] | null; peaks_status: string | null } | undefined;
@@ -137,6 +140,10 @@ router.get('/:id/peaks', async (req: Request, res: Response) => {
   }
   const status = row.peaks_status ?? 'pending';
   if (status === 'pending' || status === 'computing') {
+    if (!peaksInFlight.has(id)) {
+      peaksInFlight.add(id);
+      computePeaksFromStorage(id).finally(() => peaksInFlight.delete(id));
+    }
     res.status(202).json({ status });
     return;
   }

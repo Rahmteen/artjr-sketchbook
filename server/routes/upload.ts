@@ -29,7 +29,7 @@ const USE_SUPABASE_STORAGE = process.env.USE_SUPABASE_STORAGE === 'true';
 const DIRECT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
 
 /** Compute peaks from stored file and update sketch (for direct-upload flow). Runs async; sets peaks_status to computing → ready | failed. */
-async function computePeaksFromStorage(sketchId: string): Promise<void> {
+export async function computePeaksFromStorage(sketchId: string): Promise<void> {
   try {
     const row = await db.prepare('SELECT storage_key, duration_seconds FROM sketches WHERE id = ?').get(sketchId) as { storage_key: string; duration_seconds: number | null } | undefined;
     if (!row) return;
