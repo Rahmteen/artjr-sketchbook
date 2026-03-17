@@ -11,7 +11,8 @@
     "build": "tsc -b --force && tsc -p tsconfig.server.json && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "NODE_ENV=development tsx server/index.ts"
+    "server": "NODE_ENV=development tsx server/index.ts",
+    "reset": "tsx server/reset.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
