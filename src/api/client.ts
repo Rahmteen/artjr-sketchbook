@@ -374,7 +374,7 @@ export const uploadApi = {
     if (!(file instanceof File)) {
       throw new Error('No file in form data');
     }
-    const title = (formData.get('title') as string | null) ?? file.name;
+    const _title = (formData.get('title') as string | null) ?? file.name;
 
     if (hasDirectUploadEnv()) {
       const uploadUrlData = await getReplaceUploadUrlBody(id, {

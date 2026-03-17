@@ -7,7 +7,6 @@ import {
   Trash2,
   Loader2,
   Upload,
-  Music2,
 } from 'lucide-react';
 import { melodiesApi } from '../api/client';
 import type { ApiMelody } from '../api/client';
