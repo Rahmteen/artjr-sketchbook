@@ -4,7 +4,6 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
-  pointerWithin,
   PointerSensor,
   KeyboardSensor,
   useSensor,
@@ -52,7 +51,7 @@ const customCollision: CollisionDetection = (args) => {
     const tierDropOnly = args.droppableContainers.filter(
       (c) => (c.data.current as { type?: string } | undefined)?.type === 'tier-drop'
     );
-    return pointerWithin({ ...args, droppableContainers: tierDropOnly });
+    return closestCenter({ ...args, droppableContainers: tierDropOnly });
   }
 
   const sortableOnly = args.droppableContainers.filter(
@@ -283,6 +282,11 @@ function SortableTierSection({
   });
   const tierColor = getTierColor(tier.color);
 
+  const mergedRef = useCallback(
+    (el: HTMLDivElement | null) => { setNodeRef(el); setDropRef(el); },
+    [setNodeRef, setDropRef]
+  );
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -290,7 +294,7 @@ function SortableTierSection({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="mb-1">
+    <div ref={mergedRef} style={style} className="mb-1">
       <div
         className="w-full flex items-center gap-3 px-5 py-3 rounded-md transition-colors"
         style={{
@@ -314,7 +318,6 @@ function SortableTierSection({
       </div>
 
       <div
-        ref={setDropRef}
         className={`min-h-[120px] mt-2 rounded-md border-2 border-dashed transition-colors p-3 ${
           isOver ? 'border-accent bg-accent-soft' : 'border-transparent'
         }`}
@@ -355,6 +358,8 @@ export function CollectionDetail() {
     setError(null);
     Promise.all([collectionsApi.get(id), collectionsApi.getSketches(id)])
       .then(([col, skList]) => {
+        console.log('[load] tiers=', col.tiers?.map((t) => ({ id: t.id, label: t.label })));
+        console.log('[load] sketches tierIds=', skList.map((s) => ({ id: s.id, title: s.title, tierId: s.tierId })));
         setCollection(col);
         setSketches(skList);
         setEditName(col.name);
@@ -383,7 +388,8 @@ export function CollectionDetail() {
     async (event: DragEndEvent) => {
       setActiveDragId(null);
       const { active, over } = event;
-      if (!over || !id) return;
+      console.log('[DnD] dragEnd', { activeId: active.id, overId: over?.id, overData: over?.data?.current, activeData: active.data?.current });
+      if (!over || !id) { console.log('[DnD] early return: no over or no id'); return; }
 
       const activeData = active.data?.current as { type?: string; sketch?: ApiSketch } | undefined;
 
@@ -398,17 +404,29 @@ export function CollectionDetail() {
           const tierIdx = localTierOrder.indexOf(over.id as string);
           targetTierId = tierIdx >= 0 ? (over.id as string) : null;
         } else {
+          console.log('[DnD] early return: overData type not tier-drop or tier-header', overData);
           return;
         }
 
         const sketch = sketches.find((s) => s.id === sketchId);
-        if (!sketch || (sketch.tierId ?? null) === targetTierId) return;
+        console.log('[DnD] sketch move', { sketchId, targetTierId, currentTierId: sketch?.tierId ?? null, same: (sketch?.tierId ?? null) === targetTierId });
+        if (!sketch || (sketch.tierId ?? null) === targetTierId) { console.log('[DnD] early return: same tier or sketch not found'); return; }
 
         try {
+          console.log('[DnD] calling API updateSketchInCollection', { collectionId: id, sketchId, tierId: targetTierId });
+          setSketches((prev) =>
+            prev.map((s) =>
+              s.id === sketchId
+                ? { ...s, tierId: targetTierId ?? undefined, tierLabel: undefined }
+                : s
+            )
+          );
           await collectionsApi.updateSketchInCollection(id, sketchId, { tierId: targetTierId });
           load();
-        } catch {
+        } catch (err) {
+          console.error('[DnD] API error', err);
           setError('Failed to move sketch');
+          load();
         }
       } else if (activeData?.type === 'tier-header') {
         if (active.id === over.id) return;

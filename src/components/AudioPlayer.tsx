@@ -1,10 +1,9 @@
-import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useEffect, useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useWavesurfer } from '@wavesurfer/react';
-import { Play, Pause, Repeat, Repeat1, PenLine } from 'lucide-react';
-import type { ApiSketch, ApiMelody } from '../api/client';
-import { sketchesApi, notesApi, melodiesApi } from '../api/client';
+import { Play, Pause, Repeat, Repeat1, PenLine, Loader2 } from 'lucide-react';
+import type { ApiSketch } from '../api/client';
+import { sketchesApi, notesApi } from '../api/client';
 import type { LoopMode } from '../lib/audioEngine';
-import { getPeaks } from '../lib/audioPeaks';
 
 export type { LoopMode };
 
@@ -19,21 +18,12 @@ export interface Transport {
   setLoopMode: (mode: LoopMode) => void;
 }
 
-export interface MelodyOverlayData {
-  melodies: ApiMelody[];
-  sketchDuration: number;
-  currentTime: number;
-  onSeek: (seconds: number) => void;
-  /** When false, the melody waveform overlay is hidden (e.g. when "Melodies off" is toggled). Default true. */
-  visible?: boolean;
-}
-
 interface AudioPlayerProps {
   sketch: ApiSketch;
+  sketchPeaks?: number[] | null;
   onTimeUpdate?: (timeSeconds: number) => void;
   onNoteAdded?: () => void;
   transport?: Transport;
-  melodyOverlay?: MelodyOverlayData;
 }
 
 export interface AudioPlayerHandle {
@@ -41,6 +31,7 @@ export interface AudioPlayerHandle {
 }
 
 const formatTime = (s: number) => {
+  if (!Number.isFinite(s) || s < 0) return '0:00';
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, '0')}`;
@@ -53,11 +44,10 @@ const LOOP_LABELS: Record<LoopMode, string> = {
 };
 
 export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(function AudioPlayer(
-  { sketch, onTimeUpdate, onNoteAdded, transport, melodyOverlay },
+  { sketch, sketchPeaks, onTimeUpdate, onNoteAdded, transport },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null);
   const addNoteButtonRef = useRef<HTMLButtonElement>(null);
   const audioUrl = sketchesApi.audioUrl(sketch.id);
   const [loopMode, setLoopMode] = useState<LoopMode>('off');
@@ -65,16 +55,23 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
   const [addNoteContent, setAddNoteContent] = useState('');
   const [addNoteLoading, setAddNoteLoading] = useState(false);
   const onceRepeatedRef = useRef(false);
-  const [melodyPeaks, setMelodyPeaks] = useState<Record<string, number[]>>({});
 
   const useTransport = !!transport;
   const displayTime = useTransport ? transport.currentTime : 0;
   const displayPlaying = useTransport ? transport.isPlaying : false;
   const displayDuration = useTransport ? transport.duration : sketch.durationSeconds ?? 0;
 
+  const hasPeaksAndDuration = !!(sketchPeaks && sketchPeaks.length > 0 && sketch.durationSeconds && sketch.durationSeconds > 0);
+  const stablePeaks = useMemo(
+    () => hasPeaksAndDuration ? [sketchPeaks!] : undefined,
+    [hasPeaksAndDuration, sketchPeaks]
+  );
+
   const { wavesurfer, isReady, isPlaying, currentTime } = useWavesurfer({
     container: containerRef,
     url: audioUrl,
+    peaks: stablePeaks,
+    duration: stablePeaks ? sketch.durationSeconds : undefined,
     height: 56,
     waveColor: '#71717A',
     progressColor: '#7C3AED',
@@ -93,24 +90,32 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
         return;
       }
       if (!wavesurfer || !isReady) return;
-      const duration = wavesurfer.getDuration();
-      if (duration > 0) wavesurfer.seekTo(Math.max(0, Math.min(1, seconds / duration)));
+      const dur = wavesurfer.getDuration();
+      const effectiveDur = Number.isFinite(dur) && dur > 0 ? dur : (sketch.durationSeconds ?? 0);
+      if (effectiveDur > 0) wavesurfer.seekTo(Math.max(0, Math.min(1, seconds / effectiveDur)));
     },
-  }), [wavesurfer, isReady, useTransport, transport]);
+  }), [wavesurfer, isReady, useTransport, transport, sketch.durationSeconds]);
 
   useEffect(() => {
     if (useTransport) onTimeUpdate?.(transport?.currentTime ?? 0);
     else onTimeUpdate?.(currentTime);
   }, [useTransport, useTransport ? transport?.currentTime : currentTime, onTimeUpdate]);
 
+  const prevUseTransportRef = useRef(useTransport);
   useEffect(() => {
     if (!wavesurfer || !isReady) return;
     const media = wavesurfer.getMediaElement();
     if (!media) return;
     if (useTransport) {
+      if (!prevUseTransportRef.current) {
+        wavesurfer.pause();
+        wavesurfer.setTime(0);
+      }
+      prevUseTransportRef.current = true;
       media.volume = 0;
       return;
     }
+    prevUseTransportRef.current = false;
     media.volume = 1;
     media.loop = loopMode === 'infinite';
     const onFinish = () => {
@@ -128,13 +133,33 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
     onceRepeatedRef.current = false;
   }, [useTransport, transport?.loopMode, displayPlaying]);
 
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
+
   useEffect(() => {
-    if (!useTransport || !wavesurfer || !isReady) return;
-    const dur = wavesurfer.getDuration();
-    if (dur <= 0) return;
-    const t = transport?.currentTime ?? 0;
-    wavesurfer.seekTo(Math.max(0, Math.min(1, t / dur)));
-  }, [useTransport, transport?.currentTime, wavesurfer, isReady]);
+    if (!useTransport || !wavesurfer) return;
+    const visualOk = isReady || !!stablePeaks;
+    if (!visualOk) return;
+    let rafId: number;
+    const sync = () => {
+      const t = transportRef.current?.currentTime ?? 0;
+      const dur = wavesurfer.getDuration();
+      const effectiveDur = Number.isFinite(dur) && dur > 0 ? dur : (sketch.durationSeconds ?? 0);
+      if (effectiveDur > 0) {
+        const progress = Math.max(0, Math.min(1, t / effectiveDur));
+        // Bypass wavesurfer.seekTo() which breaks when media hasn't loaded
+        // (getDuration() returns 0 → progress becomes NaN in renderer).
+        // Instead, render the progress bar directly.
+        const renderer = (wavesurfer as any).renderer;
+        if (renderer?.renderProgress) {
+          renderer.renderProgress(progress, !!transportRef.current?.isPlaying);
+        }
+      }
+      rafId = requestAnimationFrame(sync);
+    };
+    rafId = requestAnimationFrame(sync);
+    return () => cancelAnimationFrame(rafId);
+  }, [useTransport, wavesurfer, isReady, stablePeaks, sketch.durationSeconds]);
 
   useEffect(() => {
     if (!useTransport || !wavesurfer) return;
@@ -155,8 +180,12 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
   };
 
   const effectiveLoopMode = useTransport ? (transport?.loopMode ?? 'off') : loopMode;
-  const duration = useTransport ? displayDuration : (wavesurfer && isReady ? wavesurfer.getDuration() : sketch.durationSeconds ?? 0);
-  const showAddNote = ((useTransport ? displayTime : currentTime) > 0 || (useTransport ? displayPlaying : isPlaying)) && isReady;
+  const wsDuration = wavesurfer && isReady ? wavesurfer.getDuration() : 0;
+  const duration = useTransport
+    ? displayDuration
+    : (Number.isFinite(wsDuration) && wsDuration > 0 ? wsDuration : sketch.durationSeconds ?? 0);
+  const visuallyReady = isReady || !!stablePeaks;
+  const showAddNote = ((useTransport ? displayTime : currentTime) > 0 || (useTransport ? displayPlaying : isPlaying)) && visuallyReady;
 
   const handleAddNoteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,73 +199,12 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
       .finally(() => setAddNoteLoading(false));
   };
 
-  const melodyOverlayKey = melodyOverlay ? `${melodyOverlay.melodies.map((m) => m.id).join(',')}-${melodyOverlay.sketchDuration}` : '';
-  useEffect(() => {
-    if (!melodyOverlay?.melodies.length || !melodyOverlay.sketchDuration) return;
-    let cancelled = false;
-    const load = async () => {
-      const next: Record<string, number[]> = {};
-      for (const mel of melodyOverlay.melodies) {
-        if (cancelled) return;
-        try {
-          const peaks = await getPeaks(melodiesApi.audioUrl(mel.id), {
-            durationSeconds: melodyOverlay.sketchDuration,
-            offsetMs: mel.offsetMs,
-            sourceDurationSeconds: mel.durationSeconds,
-            numBars: 256,
-          });
-          if (!cancelled) next[mel.id] = peaks;
-        } catch {
-          if (!cancelled) next[mel.id] = [];
-        }
-      }
-      if (!cancelled) setMelodyPeaks((prev) => ({ ...prev, ...next }));
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [melodyOverlayKey]);
-
-  useEffect(() => {
-    if (!melodyOverlay || melodyOverlay.visible === false || !overlayRef.current || !Object.keys(melodyPeaks).length) return;
-    const canvas = overlayRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-    const dur = melodyOverlay.sketchDuration || 1;
-    const t = melodyOverlay.currentTime;
-    const progress = t / dur;
-    // Same hue as progress (accent) but softer: accent-muted at ~50% so melody reads as a clear secondary layer
-    const melodyFill = 'rgba(167, 139, 250, 0.52)';
-    const melodyBarScale = 0.85; // Slightly shorter bars so they sit as a trace on top
-    melodyOverlay.melodies.forEach((mel) => {
-      const peaks = melodyPeaks[mel.id];
-      if (!peaks?.length) return;
-      const barW = w / peaks.length;
-      const halfH = h / 2;
-      for (let i = 0; i < peaks.length; i++) {
-        const x = (i / peaks.length) * w;
-        const peak = peaks[i] ?? 0;
-        const barH = Math.max(1, peak * halfH * melodyBarScale);
-        ctx.fillStyle = melodyFill;
-        ctx.fillRect(x, halfH - barH, Math.max(1, barW), barH * 2);
-      }
-    });
-    ctx.fillStyle = 'rgba(124, 58, 237, 0.5)';
-    ctx.fillRect(progress * w - 1, 0, 2, h);
-  }, [melodyOverlay, melodyPeaks, melodyOverlay?.currentTime]);
-
   return (
     <div className="flex items-center gap-3 w-full">
       <button
         type="button"
         onClick={() => (useTransport ? (displayPlaying ? transport?.pause() : transport?.play()) : wavesurfer?.playPause())}
-        disabled={!isReady}
+        disabled={!visuallyReady}
         aria-label={displayPlaying || isPlaying ? 'Pause' : 'Play'}
         className="flex items-center justify-center w-11 h-11 rounded-full bg-elevated text-text hover:bg-hover hover:text-accent transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
       >
@@ -244,18 +212,14 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
       </button>
       <div className="min-h-[56px] flex-1 min-w-0 rounded-md overflow-hidden relative">
         <div ref={containerRef} className="min-h-[56px] w-full relative z-0" />
-        {melodyOverlay && melodyOverlay.visible !== false && Object.keys(melodyPeaks).length > 0 && (
-          <canvas
-            ref={overlayRef}
-            className="absolute inset-0 w-full h-full pointer-events-auto cursor-pointer z-10"
-            style={{ height: 56 }}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const x = (e.clientX - rect.left) / rect.width;
-              const sec = Math.max(0, Math.min(melodyOverlay.sketchDuration, x * melodyOverlay.sketchDuration));
-              melodyOverlay.onSeek(sec);
-            }}
-          />
+        {!isReady && !stablePeaks && (
+          <div
+            className="absolute inset-0 z-20 flex items-center justify-center rounded-md"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <Loader2 size={24} className="animate-spin text-accent" />
+          </div>
         )}
       </div>
       <div className={`flex items-center shrink-0 transition-opacity duration-200 ${showAddNote ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
@@ -266,7 +230,8 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
             onClick={() => setAddNoteOpen((open) => !open)}
             aria-label="Add note at current time"
             aria-expanded={addNoteOpen}
-            className="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:text-text hover:bg-hover transition-colors"
+            disabled={!visuallyReady}
+            className="flex items-center justify-center w-9 h-9 rounded-full text-secondary hover:text-text hover:bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <PenLine size={16} />
           </button>
@@ -298,8 +263,9 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
       <button
         type="button"
         onClick={cycleLoop}
+        disabled={!visuallyReady}
         aria-label={LOOP_LABELS[effectiveLoopMode]}
-        className={`flex items-center justify-center w-9 h-9 rounded-full shrink-0 transition-colors ${
+        className={`flex items-center justify-center w-9 h-9 rounded-full shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
           effectiveLoopMode === 'off' ? 'text-secondary hover:text-text hover:bg-hover' : 'text-accent hover:bg-hover'
         }`}
       >

@@ -41,6 +41,8 @@ export interface ApiSketch {
   sortOrder?: number;
   tagIds?: string[];
   tags?: { id: string; name: string }[];
+  /** Peak computation status for waveform (direct-upload flow). */
+  peaksStatus?: 'pending' | 'computing' | 'ready' | 'failed';
 }
 
 export interface ApiNote {
@@ -137,6 +139,19 @@ export const sketchesApi = {
   },
   get: (id: string) => fetch(`${API}/sketches/${id}`).then((r) => handleRes<ApiSketch>(r)),
   audioUrl: (id: string) => `${API}/sketches/${id}/audio`,
+  /** Fetch precomputed waveform peaks (256 bars). Returns array or throws; on 202 throws with status 'pending' | 'computing' for polling. */
+  getPeaks: async (id: string): Promise<number[]> => {
+    const r = await fetch(`${API}/sketches/${id}/peaks`);
+    if (r.status === 202) {
+      const body = (await r.json()) as { status?: string };
+      const err = new Error('Peaks not ready') as Error & { status: string };
+      err.status = body?.status ?? 'pending';
+      throw err;
+    }
+    if (!r.ok) throw new Error('Peaks not found');
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  },
   downloadUrl: (id: string) => `${API}/sketches/${id}/download`,
   patch: (
     id: string,
@@ -164,44 +179,233 @@ export const sketchesApi = {
 
 const UPLOAD_DEBUG = true; // set false to reduce console noise
 
-/** Vercel serverless request body limit (4.5 MB). Larger uploads are rejected before the function runs (404/413). */
-const VERCEL_BODY_LIMIT_BYTES = 4 * 1024 * 1024; // 4 MB safe limit
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+function hasDirectUploadEnv(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+/** Returns upload-url payload or null if direct upload not available (503). */
+async function getSketchUploadUrlBody(body: {
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  title?: string;
+  description?: string;
+  parentSketchId?: string;
+}): Promise<{ id: string; storageKey: string; token: string; bucket: string; supabaseUrl?: string } | null> {
+  const res = await fetch(`${API}/upload/sketch/upload-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 503) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? 'Failed to get upload URL');
+  }
+  return res.json();
+}
+
+async function registerSketchBody(body: {
+  id: string;
+  storageKey: string;
+  title: string;
+  description?: string | null;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  durationSeconds?: number | null;
+  bpm?: number | null;
+  key?: string | null;
+  parentSketchId?: string | null;
+}): Promise<ApiSketch> {
+  const res = await fetch(`${API}/upload/sketch/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleRes<ApiSketch>(res);
+}
+
+/** Returns replace upload-url payload or null if 503. */
+async function getReplaceUploadUrlBody(
+  sketchId: string,
+  body: { fileName: string; mimeType: string; fileSizeBytes: number }
+): Promise<{ storageKey: string; token: string; bucket: string; supabaseUrl?: string } | null> {
+  const res = await fetch(`${API}/upload/sketch/replace/${sketchId}/upload-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 503) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? 'Failed to get replace upload URL');
+  }
+  return res.json();
+}
+
+async function registerReplaceSketchBody(
+  sketchId: string,
+  body: { storageKey: string; fileName: string; mimeType: string; fileSizeBytes: number; durationSeconds?: number | null }
+): Promise<ApiSketch> {
+  const res = await fetch(`${API}/upload/sketch/replace/${sketchId}/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleRes<ApiSketch>(res);
+}
+
+/** Returns melody upload-url payload or null if 503. */
+async function getMelodyUploadUrlBody(
+  sketchId: string,
+  body: { fileName: string; mimeType: string; fileSizeBytes: number; label?: string; color?: string | null; offsetMs?: number }
+): Promise<{ id: string; storageKey: string; token: string; bucket: string; supabaseUrl?: string } | null> {
+  const res = await fetch(`${API}/upload/melody/upload-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sketchId, ...body }),
+  });
+  if (res.status === 503) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? 'Failed to get melody upload URL');
+  }
+  return res.json();
+}
+
+async function registerMelodyBody(body: {
+  id: string;
+  sketchId: string;
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  durationSeconds?: number | null;
+  label?: string | null;
+  color?: string | null;
+  offsetMs?: number | null;
+  notes?: string | null;
+}): Promise<ApiMelody> {
+  const res = await fetch(`${API}/upload/melody/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleRes<ApiMelody>(res);
+}
 
 export const uploadApi = {
-  sketch: (formData: FormData) => {
+  getSketchUploadUrl: getSketchUploadUrlBody,
+  registerSketch: registerSketchBody,
+  getReplaceUploadUrl: getReplaceUploadUrlBody,
+  registerReplaceSketch: registerReplaceSketchBody,
+
+  sketch: async (formData: FormData): Promise<ApiSketch> => {
     const file = formData.get('file');
-    if (file instanceof File && file.size > VERCEL_BODY_LIMIT_BYTES) {
-      return Promise.reject(
-        new Error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB. Vercel allows up to 4.5 MB per request. Use a smaller file or compress the audio.`
-        )
-      );
+    if (!(file instanceof File)) {
+      throw new Error('No file in form data');
     }
-    const url = `${API}/upload/sketch`;
-    if (UPLOAD_DEBUG) {
-      console.log('[upload client] POST', url, '| file=', file instanceof File ? { name: file.name, size: file.size, type: file.type } : 'none', '| formData keys=', [...formData.keys()]);
-    }
-    return fetch(url, { method: 'POST', body: formData }).then((r) => {
-      if (UPLOAD_DEBUG || !r.ok) {
-        console.log('[upload client] response', r.status, r.statusText, '| url=', r.url);
-      }
-      if (!r.ok) {
-        return r.text().then((text) => {
-          console.error('[upload client] error body:', text.slice(0, 500));
-          try {
-            const err = JSON.parse(text);
-            throw new Error(((err as { error?: string }).error ?? text) || r.statusText);
-          } catch (e) {
-            if (e instanceof Error && e.message !== r.statusText) throw e;
-            throw new Error(text || r.statusText);
-          }
+    const title = (formData.get('title') as string | null) ?? file.name;
+    const description = (formData.get('description') as string | null) ?? undefined;
+    const bpm = formData.get('bpm') as string | null;
+    const key = formData.get('key') as string | null;
+    const parentSketchId = (formData.get('parentSketchId') as string | null) ?? undefined;
+
+    if (hasDirectUploadEnv()) {
+      const uploadUrlData = await getSketchUploadUrlBody({
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSizeBytes: file.size,
+        title,
+        description,
+        parentSketchId,
+      });
+      if (uploadUrlData) {
+        const { uploadToSignedUrl } = await import('../lib/supabaseUpload');
+        await uploadToSignedUrl({
+          supabaseUrl: uploadUrlData.supabaseUrl ?? SUPABASE_URL!,
+          anonKey: SUPABASE_ANON_KEY!,
+          bucket: uploadUrlData.bucket,
+          path: uploadUrlData.storageKey,
+          token: uploadUrlData.token,
+          file,
+        });
+        if (UPLOAD_DEBUG) console.log('[upload client] direct upload done, registering sketch', uploadUrlData.id);
+        return registerSketchBody({
+          id: uploadUrlData.id,
+          storageKey: uploadUrlData.storageKey,
+          title,
+          description,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileSizeBytes: file.size,
+          bpm: bpm != null && bpm !== '' ? Number(bpm) : null,
+          key: key != null && key !== '' ? key : null,
+          parentSketchId,
         });
       }
-      return r.json() as Promise<ApiSketch>;
-    });
+    }
+
+    const url = `${API}/upload/sketch`;
+    if (UPLOAD_DEBUG) {
+      console.log('[upload client] POST (multipart)', url, '| file=', { name: file.name, size: file.size, type: file.type });
+    }
+    const r = await fetch(url, { method: 'POST', body: formData });
+    if (UPLOAD_DEBUG || !r.ok) console.log('[upload client] response', r.status, r.statusText);
+    if (!r.ok) {
+      const text = await r.text();
+      try {
+        const err = JSON.parse(text);
+        throw new Error((err as { error?: string }).error ?? text);
+      } catch (e) {
+        if (e instanceof Error) throw e;
+        throw new Error(text || r.statusText);
+      }
+    }
+    return r.json() as Promise<ApiSketch>;
   },
-  replaceSketch: (id: string, formData: FormData) =>
-    fetch(`${API}/upload/sketch/replace/${id}`, { method: 'POST', body: formData }).then((r) => handleRes<ApiSketch>(r)),
+
+  replaceSketch: async (id: string, formData: FormData): Promise<ApiSketch> => {
+    const file = formData.get('file');
+    if (!(file instanceof File)) {
+      throw new Error('No file in form data');
+    }
+    const title = (formData.get('title') as string | null) ?? file.name;
+
+    if (hasDirectUploadEnv()) {
+      const uploadUrlData = await getReplaceUploadUrlBody(id, {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSizeBytes: file.size,
+      });
+      if (uploadUrlData) {
+        const { uploadToSignedUrl } = await import('../lib/supabaseUpload');
+        await uploadToSignedUrl({
+          supabaseUrl: uploadUrlData.supabaseUrl ?? SUPABASE_URL!,
+          anonKey: SUPABASE_ANON_KEY!,
+          bucket: uploadUrlData.bucket,
+          path: uploadUrlData.storageKey,
+          token: uploadUrlData.token,
+          file,
+        });
+        if (UPLOAD_DEBUG) console.log('[upload client] direct replace upload done, registering');
+        return registerReplaceSketchBody(id, {
+          storageKey: uploadUrlData.storageKey,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileSizeBytes: file.size,
+        });
+      }
+    }
+
+    const r = await fetch(`${API}/upload/sketch/replace/${id}`, { method: 'POST', body: formData });
+    return handleRes<ApiSketch>(r);
+  },
+
   reference: (formData: FormData) =>
     fetch(`${API}/upload/reference`, { method: 'POST', body: formData }).then((r) => handleRes<ApiReferenceAudio>(r)),
 };
@@ -336,9 +540,60 @@ export const collectionsApi = {
 export const melodiesApi = {
   list: (sketchId: string) =>
     fetch(`${API}/melodies/sketch/${sketchId}`).then((r) => handleRes<ApiMelody[]>(r)),
-  upload: (sketchId: string, formData: FormData) =>
-    fetch(`${API}/melodies/upload/${sketchId}`, { method: 'POST', body: formData }).then((r) => handleRes<ApiMelody>(r)),
+  upload: async (sketchId: string, formData: FormData): Promise<ApiMelody> => {
+    const file = formData.get('file');
+    if (!(file instanceof File)) {
+      throw new Error('No file in form data');
+    }
+    const label = (formData.get('label') as string | null) ?? file.name.replace(/\.[^.]+$/, '');
+    const color = formData.get('color') as string | null;
+    const offsetMs = formData.get('offsetMs') as string | null;
+
+    if (hasDirectUploadEnv()) {
+      const uploadUrlData = await getMelodyUploadUrlBody(sketchId, {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSizeBytes: file.size,
+        label: label || undefined,
+        color: color ?? undefined,
+        offsetMs: offsetMs != null ? Number(offsetMs) : undefined,
+      });
+      if (uploadUrlData) {
+        const { uploadToSignedUrl } = await import('../lib/supabaseUpload');
+        await uploadToSignedUrl({
+          supabaseUrl: uploadUrlData.supabaseUrl ?? SUPABASE_URL!,
+          anonKey: SUPABASE_ANON_KEY!,
+          bucket: uploadUrlData.bucket,
+          path: uploadUrlData.storageKey,
+          token: uploadUrlData.token,
+          file,
+        });
+        if (UPLOAD_DEBUG) console.log('[upload client] direct melody upload done, registering', uploadUrlData.id);
+        return registerMelodyBody({
+          id: uploadUrlData.id,
+          sketchId,
+          storageKey: uploadUrlData.storageKey,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileSizeBytes: file.size,
+          label: label || undefined,
+          color: color ?? undefined,
+          offsetMs: offsetMs != null ? Number(offsetMs) : undefined,
+        });
+      }
+    }
+
+    const r = await fetch(`${API}/melodies/upload/${sketchId}`, { method: 'POST', body: formData });
+    return handleRes<ApiMelody>(r);
+  },
   audioUrl: (id: string) => `${API}/melodies/${id}/audio`,
+  /** Fetch precomputed waveform peaks (256 bars). Throws on 404/error; use try/catch and fall back to client getPeaks if needed. */
+  getPeaks: async (id: string): Promise<number[]> => {
+    const r = await fetch(`${API}/melodies/${id}/peaks`);
+    if (!r.ok) throw new Error('Peaks not found');
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  },
   patch: (id: string, body: Partial<{ label: string; color: string | null; offsetMs: number; sortOrder: number; notes: string | null }>) =>
     fetch(`${API}/melodies/${id}`, {
       method: 'PATCH',

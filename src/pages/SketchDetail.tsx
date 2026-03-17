@@ -1,13 +1,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, Settings, Download } from 'lucide-react';
-import { sketchesApi, notesApi, referencesApi, referenceAudioApi, tagsApi, melodiesApi } from '../api/client';
+import { sketchesApi, notesApi, tagsApi, melodiesApi } from '../api/client';
 import type { ApiSketch, ApiMelody } from '../api/client';
 import type { Sketch } from '../types/sketch';
 import { useSketchStore } from '../stores/sketchStore';
 import { AudioPlayer, type AudioPlayerHandle } from '../components/AudioPlayer';
 import { SketchSettingsModal } from '../components/SketchSettingsModal';
-import { ReferenceForm } from '../components/ReferenceForm';
 import { MelodiesSection } from '../components/MelodiesSection';
 import { AudioEngine, type Track, type LoopMode } from '../lib/audioEngine';
 import { TagPill } from '../components/ui/TagPill';
@@ -42,13 +41,11 @@ export function SketchDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [referenceAudios, setReferenceAudios] = useState<Awaited<ReturnType<typeof referenceAudioApi.list>>>([]);
   const [activeTab, setActiveTab] = useState<'notes' | 'references'>('notes');
   const [tagInput, setTagInput] = useState('');
   const [tagSuggestions, setTagSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [allTags, setAllTags] = useState<{ id: string; name: string }[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
-  const refFormRef = useRef<HTMLDivElement>(null);
   const [melodies, setMelodies] = useState<ApiMelody[]>([]);
   const engineRef = useRef<AudioEngine | null>(null);
   const [transportCurrentTime, setTransportCurrentTime] = useState(0);
@@ -56,7 +53,10 @@ export function SketchDetail() {
   const [transportDuration, setTransportDuration] = useState(0);
   const [transportLoopMode, setTransportLoopMode] = useState<LoopMode>('off');
   const [transportReady, setTransportReady] = useState(false);
+  const [engineLoading, setEngineLoading] = useState(false);
   const [melodyModeActive, setMelodyModeActive] = useState(true);
+  const engineLoadCancelledRef = useRef(false);
+  const [sketchPeaks, setSketchPeaks] = useState<number[] | null>(null);
 
   const melodyIdsKey = useMemo(() => melodies.map((m) => m.id).join(','), [melodies]);
 
@@ -81,7 +81,6 @@ export function SketchDetail() {
       sketchesApi.list().then((list) => setSketches(list as Sketch[])).catch(() => {});
     }
   }, [sketches.length, setSketches]);
-  useEffect(() => { referenceAudioApi.list().then(setReferenceAudios).catch(() => {}); }, []);
   useEffect(() => { tagsApi.list().then(setAllTags).catch(() => {}); }, []);
   useEffect(() => {
     const q = tagInput.trim().toLowerCase();
@@ -90,16 +89,69 @@ export function SketchDetail() {
   }, [tagInput, allTags]);
 
   useEffect(() => {
-    if (!sketch || melodies.length === 0) {
-      setTransportReady(false);
-      return;
+    if (!sketch || melodies.length === 0) return;
+    engineLoadCancelledRef.current = true;
+    setEngineLoading(false);
+    if (engineRef.current) {
+      engineRef.current.destroy();
+      engineRef.current = null;
     }
     setTransportReady(false);
+    return () => {
+      engineLoadCancelledRef.current = true;
+    };
+  }, [sketch?.id, melodyIdsKey]);
+
+
+  const [peaksStatus, setPeaksStatus] = useState<'idle' | 'pending' | 'computing' | 'ready' | 'failed'>('idle');
+  useEffect(() => {
+    if (!sketch?.id) return;
+    setSketchPeaks(null);
+    const statusFromSketch = sketch.peaksStatus;
+    if (statusFromSketch === 'pending' || statusFromSketch === 'computing') setPeaksStatus(statusFromSketch);
+    else setPeaksStatus('idle');
+
     let cancelled = false;
+    const pollIntervalMs = 2000;
+    const maxAttempts = 30;
+
+    const tryLoad = (attempt: number) => {
+      if (cancelled) return;
+      sketchesApi
+        .getPeaks(sketch.id)
+        .then((peaks) => {
+          if (!cancelled) {
+            setSketchPeaks(peaks);
+            setPeaksStatus('ready');
+          }
+        })
+        .catch((err: Error & { status?: string }) => {
+          if (cancelled) return;
+          const isPending = err?.message === 'Peaks not ready' && (err?.status === 'pending' || err?.status === 'computing');
+          if (isPending && attempt < maxAttempts) {
+            if (!cancelled) setPeaksStatus(err.status === 'computing' ? 'computing' : 'pending');
+            setTimeout(() => tryLoad(attempt + 1), pollIntervalMs);
+          } else {
+            if (!cancelled) setSketchPeaks(null);
+            setPeaksStatus(isPending ? 'failed' : 'failed');
+          }
+        });
+    };
+
+    tryLoad(0);
+    return () => { cancelled = true; };
+  }, [sketch?.id, sketch?.peaksStatus]);
+
+
+  const startEngineLoad = useCallback(() => {
+    if (!sketch || melodies.length === 0 || engineRef.current) return;
+    engineLoadCancelledRef.current = false;
+    setEngineLoading(true);
     const engine = new AudioEngine(
-      () => { if (!cancelled) setTransportPlaying(engine.isPlaying); },
-      (t) => { if (!cancelled) setTransportCurrentTime(t); }
+      () => { if (!engineLoadCancelledRef.current) setTransportPlaying(engine.isPlaying); },
+      (t) => { if (!engineLoadCancelledRef.current) setTransportCurrentTime(t); }
     );
+    engineRef.current = engine;
     const sketchTrack: Track = {
       id: 'sketch',
       url: sketchesApi.audioUrl(sketch.id),
@@ -114,7 +166,7 @@ export function SketchDetail() {
     engine
       .loadTrack(sketchTrack)
       .then(() =>
-        Promise.all(
+        Promise.allSettled(
           melodies.map((mel) =>
             engine.loadTrack({
               id: mel.id,
@@ -126,30 +178,45 @@ export function SketchDetail() {
           )
         )
       )
-      .then(() => {
-        if (!cancelled) {
-          engineRef.current = engine;
+      .then((results) => {
+        if (!engineLoadCancelledRef.current) {
+          const failed = results.filter((r) => r.status === 'rejected');
+          if (failed.length > 0) {
+            console.warn('[SketchDetail] Some melody tracks failed to load:', failed.length, failed.map((r) => (r as PromiseRejectedResult).reason));
+          }
           setTransportDuration(engine.duration);
+          engine.seek(0);
           setTransportReady(true);
+        } else {
+          engine.destroy();
         }
+        setEngineLoading(false);
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      setTransportReady(false);
-      engineRef.current = null;
-      engine.destroy();
-    };
-  }, [sketch?.id, melodyIdsKey]);
+      .catch((err) => {
+        if (!engineLoadCancelledRef.current) {
+          console.error('[SketchDetail] AudioEngine load failed:', err);
+        }
+        engineRef.current = null;
+        engine.destroy();
+        setEngineLoading(false);
+      });
+  }, [sketch, melodies]);
 
   const currentTimeRef = useRef(0);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const lastPlaybackFlushRef = useRef(0);
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
-  const handleTimeUpdate = useCallback((t: number) => { currentTimeRef.current = t; }, []);
+  const handleTimeUpdate = useCallback((t: number) => {
+    currentTimeRef.current = t;
+    const now = Date.now();
+    if (now - lastPlaybackFlushRef.current >= 250) {
+      lastPlaybackFlushRef.current = now;
+      setPlaybackTime(t);
+    }
+  }, []);
   const handleNoteDeleted = () => { if (id) loadSketch(); };
   const handleSketchUpdated = useCallback((s: ApiSketch) => { setSketch(s); updateSketch(s.id, s); }, [updateSketch]);
   const handleNoteAdded = () => { if (id) loadSketch(); };
-  const handleRefAdded = () => { if (id) loadSketch(); };
-  const handleRefDeleted = () => { if (id) loadSketch(); };
 
   const addTag = async (tagIdOrName: string) => {
     if (!id || !sketch) return;
@@ -180,6 +247,18 @@ export function SketchDetail() {
     setSketch(updated);
     updateSketch(id, updated);
   };
+
+  const currentTime = transportReady ? transportCurrentTime : playbackTime;
+  const activeNoteId = useMemo(() => {
+    if (!sketch) return null;
+    for (const n of sketch.notes) {
+      if (n.type === 'timestamp' && n.timeSeconds != null) {
+        const delta = currentTime - n.timeSeconds;
+        if (delta >= -1 && delta < 0) return n.id;
+      }
+    }
+    return null;
+  }, [sketch, currentTime]);
 
   const showSkeleton = useDelayedLoading(loading);
 
@@ -316,9 +395,18 @@ export function SketchDetail() {
       {/* Audio player */}
       <StaggerItem>
         <div>
+          {(peaksStatus === 'pending' || peaksStatus === 'computing') && (
+            <p className="text-xs text-tertiary mb-1" role="status">
+              Waveform: {peaksStatus === 'computing' ? 'generating…' : 'loading…'}
+            </p>
+          )}
+          {peaksStatus === 'failed' && !sketchPeaks?.length && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-1">Waveform unavailable</p>
+          )}
           <AudioPlayer
             ref={audioPlayerRef}
             sketch={sketch}
+            sketchPeaks={sketchPeaks ?? undefined}
             onTimeUpdate={handleTimeUpdate}
             onNoteAdded={handleNoteAdded}
             transport={
@@ -338,17 +426,6 @@ export function SketchDetail() {
                   }
                 : undefined
             }
-            melodyOverlay={
-              melodies.length > 0
-                ? {
-                    melodies,
-                    sketchDuration: sketch.durationSeconds ?? 0,
-                    currentTime: transportCurrentTime,
-                    onSeek: (t: number) => engineRef.current?.seek(t),
-                    visible: melodyModeActive,
-                  }
-                : undefined
-            }
           />
         </div>
       </StaggerItem>
@@ -357,11 +434,13 @@ export function SketchDetail() {
       <StaggerItem>
         <MelodiesSection
           sketchId={sketch.id}
-          sketchDuration={sketch.durationSeconds ?? 0}
+          sketchDuration={transportReady ? transportDuration : (sketch.durationSeconds ?? 0)}
           melodies={melodies}
           onMelodiesChange={setMelodies}
           melodyModeActive={melodyModeActive}
           onMelodyModeChange={setMelodyModeActive}
+          onRequestEngine={startEngineLoad}
+          engineLoading={engineLoading}
           engineRef={melodies.length > 0 ? engineRef : undefined}
           transport={
             melodies.length > 0 && transportReady
@@ -394,15 +473,6 @@ export function SketchDetail() {
             >
               Notes
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('references')}
-              className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                activeTab === 'references' ? 'border-accent text-accent' : 'border-transparent text-secondary hover:text-text'
-              }`}
-            >
-              References
-            </button>
           </div>
 
           {activeTab === 'notes' && (
@@ -414,96 +484,43 @@ export function SketchDetail() {
                   </div>
                 ) : (
                   <ul className="list-none p-0 m-0 space-y-1">
-                    {sketch.notes.map((n) => (
-                      <li key={n.id} className="flex flex-wrap items-center justify-between gap-2 py-3 px-1 border-b border-border last:border-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          {n.type === 'timestamp' && n.timeSeconds != null && (
-                            <button
-                              type="button"
-                              className="text-xs text-accent hover:underline tabular-nums"
-                              onClick={() => { audioPlayerRef.current?.seek(n.timeSeconds!); }}
-                            >
-                              {formatDuration(n.timeSeconds)}
-                            </button>
-                          )}
-                          <span className="text-sm text-text">{n.content}</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="text-xs text-tertiary hover:text-danger transition-colors"
-                          onClick={() => notesApi.delete(n.id).then(handleNoteDeleted)}
+                    {sketch.notes.map((n) => {
+                      const isActive = n.id === activeNoteId;
+                      return (
+                        <li
+                          key={n.id}
+                          className={`flex flex-wrap items-center justify-between gap-2 py-3 px-3 -mx-1 rounded border-b border-border last:border-0 transition-colors duration-300 ${
+                            isActive ? 'bg-accent/10 border-transparent' : ''
+                          }`}
                         >
-                          Delete
-                        </button>
-                      </li>
-                    ))}
+                          <span className="flex flex-wrap items-center gap-2">
+                            {n.type === 'timestamp' && n.timeSeconds != null && (
+                              <button
+                                type="button"
+                                className={`text-xs tabular-nums transition-colors duration-300 ${isActive ? 'text-accent font-semibold' : 'text-accent hover:underline'}`}
+                                onClick={() => { audioPlayerRef.current?.seek(n.timeSeconds!); }}
+                              >
+                                {formatDuration(n.timeSeconds)}
+                              </button>
+                            )}
+                            <span className={`text-sm transition-colors duration-300 ${isActive ? 'text-accent' : 'text-text'}`}>{n.content}</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="text-xs text-tertiary hover:text-danger transition-colors"
+                            onClick={() => notesApi.delete(n.id).then(handleNoteDeleted)}
+                          >
+                            Delete
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
             </FadeUp>
           )}
 
-          {activeTab === 'references' && (
-            <FadeUp duration={0.3}>
-              <div className="space-y-6">
-                {sketch.references.length === 0 ? (
-                  <>
-                    <div className="py-10 text-center">
-                      <p className="m-0 text-sm text-secondary">No references yet</p>
-                    </div>
-                    <div ref={refFormRef}>
-                      <ReferenceForm
-                        sketchId={sketch.id}
-                        otherSketches={sketches.filter((s) => s.id !== sketch.id)}
-                        referenceAudios={referenceAudios}
-                        onAdded={handleRefAdded}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <ul className="list-none p-0 m-0 space-y-1">
-                      {sketch.references.map((r) => (
-                        <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                          <span>
-                            {r.type === 'link' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{r.label || r.url}</a>}
-                            {r.type === 'sketch' && r.targetSketchId && (
-                              <Link to={`/sketches/${r.targetSketchId}`} className="text-accent hover:underline">{r.label || `Sketch ${r.targetSketchId.slice(0, 8)}`}</Link>
-                            )}
-                            {r.type === 'reference_audio' && r.referenceAudioId && (
-                              <span className="text-text">{r.label || (referenceAudios.find((ra) => ra.id === r.referenceAudioId)?.fileName ?? r.referenceAudioId)}</span>
-                            )}
-                          </span>
-                          <button
-                            type="button"
-                            className="text-xs text-tertiary hover:text-danger transition-colors"
-                            onClick={() => referencesApi.delete(r.id).then(handleRefDeleted)}
-                          >
-                            Delete
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      type="button"
-                      onClick={() => refFormRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                      className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-                    >
-                      + Add reference
-                    </button>
-                    <div ref={refFormRef}>
-                      <ReferenceForm
-                        sketchId={sketch.id}
-                        otherSketches={sketches.filter((s) => s.id !== sketch.id)}
-                        referenceAudios={referenceAudios}
-                        onAdded={handleRefAdded}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </FadeUp>
-          )}
         </section>
       </StaggerItem>
 

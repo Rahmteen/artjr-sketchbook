@@ -17,6 +17,31 @@ function toPgParams(sql: string): string {
   return sql.replace(/\?/g, () => `$${++i}`);
 }
 
+/**
+ * Build typed placeholder SQL: casts $N to the correct Postgres type based on
+ * the JavaScript value so that text[] params sent via RPC are interpreted
+ * correctly (e.g. `($1[1])::int` for numbers, `($1[1])::real` for floats).
+ */
+function toPgTypedParams(sql: string, params: unknown[]): { sql: string; filteredParams: unknown[] } {
+  let srcIdx = 0;
+  let destIdx = 0;
+  const filteredParams: unknown[] = [];
+  const outSql = sql.replace(/\?/g, () => {
+    const val = srcIdx < params.length ? params[srcIdx] : undefined;
+    srcIdx++;
+    if (val === null || val === undefined) return 'NULL';
+    filteredParams.push(val);
+    destIdx++;
+    const placeholder = `$${destIdx}`;
+    if (typeof val === 'number') {
+      return Number.isInteger(val) ? `${placeholder}::int` : `${placeholder}::double precision`;
+    }
+    if (typeof val === 'boolean') return `${placeholder}::boolean`;
+    return placeholder;
+  });
+  return { sql: outSql, filteredParams };
+}
+
 type Row = Record<string, unknown>;
 
 let supabaseDbClient: SupabaseClient | null = null;
@@ -45,9 +70,10 @@ export const db = {
   prepare(sql: string) {
     return {
       get: async (...params: unknown[]): Promise<Row | undefined> => {
+        const typed = toPgTypedParams(sql, params);
         const { data, error } = await getSupabaseDb().rpc('run_sql_query', {
-          query: toPgParams(sql),
-          params: params.map(String),
+          query: typed.sql,
+          params: typed.filteredParams.map(toParamString),
         });
         if (error) {
           console.error('[db] Supabase REST run_sql_query error:', error.message, '| code=', error.code, '| details=', error.details);
@@ -57,9 +83,10 @@ export const db = {
         return row != null ? (row as Row) : undefined;
       },
       all: async (...params: unknown[]): Promise<Row[]> => {
+        const typed = toPgTypedParams(sql, params);
         const { data, error } = await getSupabaseDb().rpc('run_sql_query', {
-          query: toPgParams(sql),
-          params: params.map(String),
+          query: typed.sql,
+          params: typed.filteredParams.map(toParamString),
         });
         if (error) {
           console.error('[db] Supabase REST run_sql_query error:', error.message, '| code=', error.code, '| details=', error.details);
@@ -68,9 +95,12 @@ export const db = {
         return Array.isArray(data) ? (data as Row[]) : [];
       },
       run: async (...params: unknown[]): Promise<void> => {
+        const typed = toPgTypedParams(sql, params);
+        const rpcParams = typed.filteredParams.map(toParamString);
+        console.log('[db] run_sql_exec', { query: typed.sql, params: rpcParams });
         const { error } = await getSupabaseDb().rpc('run_sql_exec', {
-          query: toPgParams(sql),
-          params: params.map(String),
+          query: typed.sql,
+          params: rpcParams,
         });
         if (error) {
           console.error('[db] Supabase REST run_sql_exec error:', error.message, '| code=', error.code, '| details=', error.details);
@@ -80,6 +110,11 @@ export const db = {
     };
   },
 };
+
+function toParamString(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  return String(val);
+}
 
 export type SketchRow = {
   id: string;
@@ -95,6 +130,8 @@ export type SketchRow = {
   bpm: number | null;
   duration_seconds: number | null;
   key: string | null;
+  peaks_json: number[] | null;
+  peaks_status: string | null;
   created_at: string;
   updated_at: string;
   collection_id?: string | null;
@@ -108,6 +145,6 @@ export type CollectionRow = { id: string; name: string; created_at: string | nul
 export type CollectionTierRow = { id: string; collection_id: string; label: string; sort_order: number; color: string | null };
 export type SketchCollectionRow = { id: string; sketch_id: string; collection_id: string; tier_id: string | null; sort_order: number; created_at: string };
 export type ActivityRow = { id: string; type: string; entity_type: string; entity_id: string | null; payload_json: string | null; created_at: string };
-export type MelodyRow = { id: string; sketch_id: string; storage_key: string; file_name: string; mime_type: string; file_size_bytes: number; duration_seconds: number | null; bpm: number | null; label: string; color: string | null; offset_ms: number; sort_order: number; notes: string | null; created_at: string; updated_at: string };
+export type MelodyRow = { id: string; sketch_id: string; storage_key: string; file_name: string; mime_type: string; file_size_bytes: number; duration_seconds: number | null; bpm: number | null; label: string; color: string | null; offset_ms: number; sort_order: number; notes: string | null; peaks_json: number[] | null; created_at: string; updated_at: string };
 export type TagRow = { id: string; name: string };
 export type SketchTagRow = { sketch_id: string; tag_id: string };

@@ -15,9 +15,16 @@ CREATE TABLE IF NOT EXISTS sketches (
   bpm REAL,
   duration_seconds REAL,
   key TEXT,
+  peaks_json JSONB,
+  peaks_status TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- Migration: add peaks_json to existing sketches table (run once if table already existed)
+ALTER TABLE sketches ADD COLUMN IF NOT EXISTS peaks_json JSONB;
+-- Migration: add peaks_status ('pending' | 'computing' | 'ready' | 'failed') for direct-upload peak computation
+ALTER TABLE sketches ADD COLUMN IF NOT EXISTS peaks_status TEXT;
 
 CREATE TABLE IF NOT EXISTS reference_audio (
   id TEXT PRIMARY KEY,
@@ -113,10 +120,14 @@ CREATE TABLE IF NOT EXISTS melodies (
   offset_ms REAL NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
+  peaks_json JSONB,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_melodies_sketch ON melodies(sketch_id);
+
+-- Migration: add peaks_json to existing melodies table (run once if table already existed)
+ALTER TABLE melodies ADD COLUMN IF NOT EXISTS peaks_json JSONB;
 
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,

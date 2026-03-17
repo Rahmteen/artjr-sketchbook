@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { existsSync, unlinkSync, writeFileSync, mkdirSync, createReadStream } from 'fs';
+import { existsSync, unlinkSync, writeFileSync, mkdirSync, createReadStream, readFileSync } from 'fs';
 import { Readable } from 'stream';
 import { parseFile, parseBuffer } from 'music-metadata';
 import { v4 as uuidv4 } from 'uuid';
@@ -99,6 +99,19 @@ export async function getFileStream(storageKey: string): Promise<Readable | null
   return createReadStream(path);
 }
 
+/** Get full file contents as Buffer (for peak computation). Supabase: download then Buffer; local: readFileSync. */
+export async function getFileBuffer(storageKey: string): Promise<Buffer | null> {
+  if (supabase) {
+    const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).download(storageKey);
+    if (error || !data) return null;
+    const ab = await data.arrayBuffer();
+    return Buffer.from(ab);
+  }
+  const path = getStoragePath(storageKey);
+  if (!existsSync(path)) return null;
+  return readFileSync(path);
+}
+
 /** Get audio duration from a file path (local only). */
 export async function getAudioDurationSeconds(filePath: string): Promise<number | undefined> {
   try {
@@ -138,6 +151,19 @@ export function getExtension(mime: string): string {
     'audio/x-m4a': '.m4a',
   };
   return map[mime] ?? '.bin';
+}
+
+/** Create a signed upload URL for direct client upload. Only when Supabase storage is configured. */
+export async function createSignedUploadUrl(storageKey: string): Promise<{ path: string; token: string }> {
+  if (!supabase) throw new Error('Supabase storage is not configured');
+  const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).createSignedUploadUrl(storageKey);
+  if (error) throw new Error(`Signed upload URL failed: ${error.message}`);
+  if (!data?.path || !data?.token) throw new Error('Invalid signed upload URL response');
+  return { path: data.path, token: data.token };
+}
+
+export function getSupabaseBucket(): string {
+  return SUPABASE_BUCKET;
 }
 
 export { MAX_FILE_SIZE };

@@ -21,7 +21,7 @@ This app runs on Vercel with the **client** (Vite SPA) served as static assets a
 
    - **Client (optional):**  
      - `VITE_ENTRY_CODE` – gate code (e.g. `1234`)  
-     - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` – if the client talks to Supabase  
+     - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` – required for **direct sketch upload** (files > 4.5 MB); without them, uploads go through the API and are limited by Vercel's body size  
      - `VITE_API_URL` – leave unset to use same origin (recommended when API is on Vercel)
 
    - **Server / API (required for DB):**  
@@ -116,7 +116,7 @@ If you see RPC errors, check **`[db] Supabase REST ... error:`** in the logs and
 
    If **`[vercel] handler invoked`** never appears: check that the repo has `api/[[...path]].ts` and `api/upload/sketch.ts`, the build does not exclude `api/`, and no rewrite sends `/api/*` elsewhere.
 
-3. **Vercel request body limit:** Serverless functions have a **4.5 MB** request body limit. Larger uploads get **413** or may fail before reaching the app. For files &gt; 4.5 MB use direct upload to Supabase Storage from the client, then call your API to register the sketch.
+3. **Vercel request body limit:** Serverless functions have a **4.5 MB** request body limit. For sketch uploads larger than that, use **direct upload**: set **`USE_SUPABASE_STORAGE=true`** on the server and configure the client with **`VITE_SUPABASE_URL`** and **`VITE_SUPABASE_ANON_KEY`**. The client will then get a signed upload URL from the API, upload the file directly to Supabase Storage, and register the sketch—no file passes through Vercel.
 
 4. **Storage:** Set **`USE_SUPABASE_STORAGE=true`** and **`SUPABASE_URL`** / **`SUPABASE_SERVICE_ROLE_KEY`** so files go to Supabase Storage.
 

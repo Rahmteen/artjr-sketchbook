@@ -32,6 +32,8 @@ export interface ApiSketch {
   sortOrder?: number;
   tagIds?: string[];
   tags?: { id: string; name: string }[];
+  /** Peak computation status for waveform (direct-upload flow). */
+  peaksStatus?: 'pending' | 'computing' | 'ready' | 'failed';
 }
 
 export interface ApiNote {
@@ -94,6 +96,7 @@ export function sketchRowToSketch(
     collections: opts?.collections ?? [],
     tags: opts?.tags,
     tagIds: opts?.tags?.map((t) => t.id),
+    peaksStatus: row.peaks_status === 'pending' || row.peaks_status === 'computing' || row.peaks_status === 'ready' || row.peaks_status === 'failed' ? row.peaks_status : undefined,
   };
 }
 

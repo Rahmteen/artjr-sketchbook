@@ -6,6 +6,38 @@
 
 const DEFAULT_BARS = 256;
 
+/**
+ * Map server canonical peaks (256 bars over source duration) to timeline peaks.
+ * Returns numBars over timelineDurationSeconds, with zeros before/after the melody's range.
+ */
+export function timelinePeaksFromCanonicalPeaks(
+  canonicalPeaks: number[],
+  sourceDurationSeconds: number,
+  timelineDurationSeconds: number,
+  offsetMs: number,
+  numBars: number
+): number[] {
+  if (timelineDurationSeconds <= 0 || numBars <= 0 || sourceDurationSeconds <= 0) {
+    return Array(numBars).fill(0);
+  }
+  const startSec = offsetMs / 1000;
+  const endSec = startSec + sourceDurationSeconds;
+  const peaks: number[] = [];
+  const canonicalLen = canonicalPeaks.length;
+  for (let i = 0; i < numBars; i++) {
+    const t = (i / numBars) * timelineDurationSeconds;
+    if (t < startSec || t >= endSec) {
+      peaks.push(0);
+      continue;
+    }
+    const localT = t - startSec;
+    const progress = localT / sourceDurationSeconds;
+    const idx = Math.min(canonicalLen - 1, Math.floor(progress * canonicalLen));
+    peaks.push(canonicalPeaks[idx] ?? 0);
+  }
+  return peaks;
+}
+
 export interface PeakOptions {
   /** Total duration in seconds to span (e.g. sketch duration) */
   durationSeconds: number;

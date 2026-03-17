@@ -11,6 +11,7 @@ import {
   deleteFile,
   MAX_FILE_SIZE,
 } from '../storage.js';
+import { computePeaksFromBuffer } from '../peaks.js';
 import { strParam } from '../param.js';
 import type { MelodyRow } from '../db.js';
 
@@ -78,9 +79,10 @@ router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res
   const now = new Date().toISOString();
   const maxOrder = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM melodies WHERE sketch_id = ?').get(sketchId) as { next: number };
 
+  // Use explicit casts so Supabase RPC (params as text[]) matches column types
   await db.prepare(
-    `INSERT INTO melodies (id, sketch_id, storage_key, file_name, mime_type, file_size_bytes, duration_seconds, bpm, label, color, offset_ms, sort_order, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO melodies (id, sketch_id, storage_key, file_name, mime_type, file_size_bytes, duration_seconds, bpm, label, color, offset_ms, sort_order, notes, peaks_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?)`
   ).run(
     id,
     sketchId,
@@ -100,6 +102,16 @@ router.post('/upload/:sketchId', upload.single('file'), async (req: Request, res
 
   const row = await db.prepare('SELECT * FROM melodies WHERE id = ?').get(id) as MelodyRow;
   res.status(201).json(melodyRowToApi(row));
+
+  // Precompute waveform peaks and store in DB (non-blocking for upload response)
+  const durationForPeaks = durationSeconds ?? 60;
+  computePeaksFromBuffer(req.file.buffer, durationForPeaks, 256)
+    .then(({ peaks }) => {
+      const peaksJson = JSON.stringify(peaks);
+      const updatedAt = new Date().toISOString();
+      return db.prepare('UPDATE melodies SET peaks_json = ?::jsonb, updated_at = ? WHERE id = ?').run(peaksJson, updatedAt, id);
+    })
+    .catch((err) => console.error('[melodies] peaks compute/save failed:', err));
 });
 
 router.get('/:id/audio', async (req: Request, res: Response) => {
@@ -119,6 +131,18 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
   stream.on('error', () => {
     if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
   });
+});
+
+router.get('/:id/peaks', async (req: Request, res: Response) => {
+  const id = strParam(req.params.id);
+  const row = await db.prepare('SELECT peaks_json FROM melodies WHERE id = ?').get(id) as { peaks_json: number[] | null } | undefined;
+  if (!row || row.peaks_json == null) {
+    res.status(404).json({ error: 'Peaks not found' });
+    return;
+  }
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.json(row.peaks_json);
 });
 
 router.patch('/:id', async (req: Request, res: Response) => {

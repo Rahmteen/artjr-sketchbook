@@ -122,6 +122,27 @@ router.get('/:id/audio', async (req: Request, res: Response) => {
   });
 });
 
+router.get('/:id/peaks', async (req: Request, res: Response) => {
+  const id = strParam(req.params.id);
+  const row = await db.prepare('SELECT peaks_json, peaks_status FROM sketches WHERE id = ?').get(id) as { peaks_json: number[] | null; peaks_status: string | null } | undefined;
+  if (!row) {
+    res.status(404).json({ error: 'Sketch not found' });
+    return;
+  }
+  if (row.peaks_json != null && Array.isArray(row.peaks_json)) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.json(row.peaks_json);
+    return;
+  }
+  const status = row.peaks_status ?? 'pending';
+  if (status === 'pending' || status === 'computing') {
+    res.status(202).json({ status });
+    return;
+  }
+  res.status(404).json({ error: 'Peaks not found', status: status === 'failed' ? 'failed' : undefined });
+});
+
 router.get('/:id/download', async (req: Request, res: Response) => {
   const id = strParam(req.params.id);
   const row = await db.prepare('SELECT * FROM sketches WHERE id = ?').get(id) as SketchRow | undefined;

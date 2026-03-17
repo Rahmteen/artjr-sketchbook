@@ -40,6 +40,15 @@ When `USE_SUPABASE_STORAGE=true` and `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY
 
 **Setup:** In Supabase create a bucket (e.g. `audio`), add a policy so the service role can read/write, then set the env vars. Recommended on Vercel (local disk is read-only).
 
+For **large sketch uploads** (e.g. > 4.5 MB, to avoid Vercel's body limit), also set the **client** env vars so the browser can upload directly to Supabase:
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_SUPABASE_URL` | Same as server `SUPABASE_URL` (or your project URL). |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon (public) key from Dashboard → Project Settings → API. |
+
+With these, the client requests a signed upload URL from the API, uploads the file to Supabase Storage, then calls the API to register the sketch. Without them, uploads go through the API and are limited by Vercel's request body size.
+
 ---
 
 ## Summary

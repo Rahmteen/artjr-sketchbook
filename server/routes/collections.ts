@@ -184,12 +184,12 @@ router.get('/:id/sketches', async (req: Request, res: Response) => {
     return;
   }
   const scRows = (await db.prepare(
-    `SELECT sc.tier_id, sc.sort_order, s.*
+    `SELECT sc.tier_id AS sc_tier_id, sc.sort_order AS sc_sort_order, s.*
      FROM sketch_collections sc
      JOIN sketches s ON s.id = sc.sketch_id
      WHERE sc.collection_id = ?
      ORDER BY sc.sort_order ASC, s.updated_at DESC`
-  ).all(collectionId)) as (SketchRow & { tier_id: string | null; sort_order: number })[];
+  ).all(collectionId)) as (SketchRow & { sc_tier_id: string | null; sc_sort_order: number })[];
 
   const sketchIds = scRows.map((r) => r.id);
   const tagsBySketch = await getTagsForSketches(sketchIds);
@@ -198,16 +198,16 @@ router.get('/:id/sketches', async (req: Request, res: Response) => {
   const tiers = (await db.prepare('SELECT id, label FROM collection_tiers WHERE collection_id = ?').all(collectionId)) as { id: string; label: string }[];
   const tierLabelMap = new Map(tiers.map((t) => [t.id, t.label]));
 
+  console.log('[collections] GET sketches raw sc_tier_ids=', scRows.map((r) => ({ id: r.id, sc_tier_id: r.sc_tier_id, raw_tier_id: (r as Record<string, unknown>).tier_id })));
   const sketches = await Promise.all(scRows.map(async (row) => {
     const notes = (await db.prepare('SELECT * FROM notes WHERE sketch_id = ?').all(row.id)) as NoteRow[];
     const refs = (await db.prepare('SELECT * FROM sketch_references WHERE sketch_id = ?').all(row.id)) as ReferenceRow[];
     const tags = tagsBySketch.get(row.id) ?? [];
     const collections = collectionsBySketch.get(row.id) ?? [];
     const sketch = sketchRowToSketch(row, notes, refs, { tags, collections });
-    // Override tierId/tierLabel to reflect this collection's assignment
-    sketch.tierId = row.tier_id ?? undefined;
-    sketch.tierLabel = row.tier_id ? tierLabelMap.get(row.tier_id) ?? undefined : undefined;
-    sketch.sortOrder = row.sort_order;
+    sketch.tierId = row.sc_tier_id ?? undefined;
+    sketch.tierLabel = row.sc_tier_id ? tierLabelMap.get(row.sc_tier_id) ?? undefined : undefined;
+    sketch.sortOrder = row.sc_sort_order;
     return sketch;
   }));
   res.json(sketches);
@@ -268,6 +268,7 @@ router.delete('/:id/sketches/:sketchId', async (req: Request, res: Response) => 
 router.patch('/:id/sketches/:sketchId', async (req: Request, res: Response) => {
   const collectionId = strParam(req.params.id);
   const sketchId = strParam(req.params.sketchId);
+  console.log('[collections] PATCH sketch tier', { collectionId, sketchId, body: req.body });
   const scRow = await db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow | undefined;
   if (!scRow) {
     res.status(404).json({ error: 'Sketch not in this collection' });
@@ -295,7 +296,11 @@ router.patch('/:id/sketches/:sketchId', async (req: Request, res: Response) => {
   }
   if (updates.length > 0) {
     values.push(collectionId, sketchId);
-    await db.prepare(`UPDATE sketch_collections SET ${updates.join(', ')} WHERE collection_id = ? AND sketch_id = ?`).run(...values);
+    const updateSql = `UPDATE sketch_collections SET ${updates.join(', ')} WHERE collection_id = ? AND sketch_id = ?`;
+    console.log('[collections] UPDATE sql=', updateSql, 'values=', values);
+    await db.prepare(updateSql).run(...values);
+    const verify = await db.prepare('SELECT tier_id FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as { tier_id: string | null } | undefined;
+    console.log('[collections] UPDATE done | verify tier_id=', verify?.tier_id);
   }
 
   if (tierId !== undefined && tierId !== oldTierId) {
@@ -311,6 +316,7 @@ router.patch('/:id/sketches/:sketchId', async (req: Request, res: Response) => {
   }
 
   const updated = await db.prepare('SELECT * FROM sketch_collections WHERE collection_id = ? AND sketch_id = ?').get(collectionId, sketchId) as SketchCollectionRow;
+  console.log('[collections] re-read after UPDATE', { tier_id: updated.tier_id, id: updated.id });
   res.json({
     id: updated.id,
     sketchId: updated.sketch_id,

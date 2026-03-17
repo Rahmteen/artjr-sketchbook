@@ -61,15 +61,15 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.95 }}
             transition={{ duration: 0.18, ease: EASE_OUT_EXPO }}
-            className="absolute top-full left-1/2 -translate-x-1/2 mt-2 p-2 rounded-md bg-elevated border border-border shadow-modal z-20"
+            className="absolute top-full left-1/2 -translate-x-1/2 mt-2 p-2.5 rounded-md bg-elevated border border-border shadow-modal z-20 min-w-[170px]"
           >
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-5 gap-2">
               {TIER_COLORS.map((c) => (
                 <button
                   key={c.key}
                   type="button"
                   onClick={() => { onChange(c.key); setOpen(false); }}
-                  className={`w-6 h-6 rounded-full transition-all ${
+                  className={`w-7 h-7 rounded-full transition-all shrink-0 ${
                     value === c.key ? 'ring-2 ring-offset-1 ring-offset-base scale-110' : 'hover:scale-110'
                   }`}
                   style={{
