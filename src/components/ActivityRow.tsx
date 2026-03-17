@@ -205,11 +205,9 @@ export function ActivityRow({ activity }: { activity: ApiActivity }) {
   };
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="w-7 h-7 rounded-md bg-surface flex items-center justify-center shrink-0">
-        <Icon size={14} className="text-tertiary" />
-      </div>
-      <span className="text-sm text-text leading-relaxed">{renderContent()}</span>
+    <div className="flex items-center gap-2 min-w-0">
+      <Icon size={12} className="text-tertiary shrink-0" />
+      <span className="text-xs text-text whitespace-nowrap overflow-hidden text-ellipsis min-w-0">{renderContent()}</span>
     </div>
   );
 }

@@ -51,3 +51,16 @@ export function SkeletonGrid({ count = 6, className = '' }: { count?: number; cl
     </div>
   );
 }
+
+export function SkeletonFileGrid({ count = 8, className = '' }: { count?: number; className?: string }) {
+  return (
+    <div className={`grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3 ${className}`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="flex flex-col items-center gap-1.5 py-3 px-2">
+          <div className="skeleton w-12 h-12 rounded-md" />
+          <SkeletonLine width="48px" height="10px" />
+        </div>
+      ))}
+    </div>
+  );
+}

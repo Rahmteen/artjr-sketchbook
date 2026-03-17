@@ -111,7 +111,7 @@
 
   /* Cards */
   .card {
-    @apply rounded-lg border border-border bg-elevated shadow-card;
+    @apply  border border-border rounded-sm bg-elevated shadow-card;
   }
   .card-hover {
     @apply card transition-all duration-200;
@@ -123,7 +123,7 @@
 
   /* Modals */
   .modal {
-    @apply rounded-lg border border-border bg-elevated shadow-modal backdrop-blur-xl;
+    @apply rounded-md border border-border bg-elevated shadow-modal backdrop-blur-xl;
   }
 
   /* Buttons */

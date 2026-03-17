@@ -3,14 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { collectionsApi } from '../api/client';
 import type { ApiCollection } from '../api/client';
-import { SkeletonTable } from '../components/ui/Skeleton';
-import { FadeUp, StaggerList, StaggerRow } from '../components/ui/Motion';
+import { SkeletonLine } from '../components/ui/Skeleton';
+import { FadeUp, Stagger, StaggerItem } from '../components/ui/Motion';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '--';
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
+import { FileCard } from '../components/ui/FileCard';
 
 export function Collections() {
   const [collections, setCollections] = useState<ApiCollection[]>([]);
@@ -22,7 +18,6 @@ export function Collections() {
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
     collectionsApi
       .list()
       .then((list) => { if (!cancelled) setCollections(list); })
@@ -57,7 +52,14 @@ export function Collections() {
           <div className="skeleton w-24 h-3 rounded" />
           <div className="skeleton w-32 h-9 rounded-full" />
         </div>
-        <SkeletonTable rows={4} cols={2} />
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="flex flex-col items-center gap-1.5 py-3 px-2">
+              <div className="skeleton w-12 h-12 rounded-md" />
+              <SkeletonLine width="48px" height="10px" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -92,42 +94,17 @@ export function Collections() {
       {error && <p className="text-danger text-sm">{error}</p>}
 
       <FadeUp delay={0.08}>
-        <div className="card overflow-hidden">
-          {collections.length === 0 ? (
-            <p className="p-10 m-0 text-secondary text-sm text-center">
-              No collections yet
-            </p>
-          ) : (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-tertiary">Name</th>
-                  <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-tertiary">Sketches</th>
-                  <th className="px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-tertiary">Updated</th>
-                </tr>
-              </thead>
-              <StaggerList as="tbody" className="divide-y divide-border">
-                {collections.map((c) => (
-                  <StaggerRow
-                    key={c.id}
-                    as="tr"
-                    className="row-link"
-                    onClick={() => navigate(`/collections/${c.id}`)}
-                    role="link"
-                    tabIndex={0}
-                    onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && navigate(`/collections/${c.id}`)}
-                  >
-                    <td className="px-6 py-4">
-                      <span className="font-medium text-text">{c.name}</span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-secondary tabular-nums">{c.sketchCount ?? 0}</td>
-                    <td className="px-6 py-4 text-sm text-secondary">{formatDate(c.updatedAt)}</td>
-                  </StaggerRow>
-                ))}
-              </StaggerList>
-            </table>
-          )}
-        </div>
+        {collections.length === 0 ? (
+          <p className="p-10 m-0 text-secondary text-sm text-center">No collections yet</p>
+        ) : (
+          <Stagger className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {collections.map((c) => (
+              <StaggerItem key={c.id}>
+                <FileCard to={`/collections/${c.id}`} icon="folder" label={c.name} />
+              </StaggerItem>
+            ))}
+          </Stagger>
+        )}
       </FadeUp>
     </div>
   );

@@ -6,7 +6,7 @@ import type { ApiSketch, ApiCollection } from '../api/client';
 import { ViewSwitcher, type ViewMode } from '../components/ui/ViewSwitcher';
 import { SketchCard } from '../components/ui/SketchCard';
 import { TagPill } from '../components/ui/TagPill';
-import { SkeletonTable, SkeletonGrid } from '../components/ui/Skeleton';
+import { SkeletonTable, SkeletonFileGrid } from '../components/ui/Skeleton';
 import { FadeUp, Stagger, StaggerItem, StaggerList, StaggerRow } from '../components/ui/Motion';
 import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { Select } from '../components/ui/Select';
@@ -143,7 +143,7 @@ export function Sketches() {
 
       {/* Loading */}
       {showSkeleton ? (
-        viewMode === 'grid' ? <SkeletonGrid count={6} /> : <SkeletonTable rows={5} cols={5} />
+        viewMode === 'grid' ? <SkeletonFileGrid count={8} /> : <SkeletonTable rows={5} cols={5} />
       ) : sorted.length === 0 ? (
         <FadeUp delay={0.06}>
           <div className="card p-10 text-center">
@@ -154,7 +154,7 @@ export function Sketches() {
         <>
           {/* Grid view */}
           {viewMode === 'grid' && (
-            <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <Stagger className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
               {sorted.map((s) => (
                 <StaggerItem key={s.id}>
                   <SketchCard sketch={s} />

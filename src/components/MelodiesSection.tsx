@@ -410,7 +410,7 @@ export function MelodiesSection({
                   <motion.div
                     key={mel.id}
                     initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    animate={{ opacity: isActiveMelody ? 1 : 0.5, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.3, delay: idx * 0.06, ease: EASE_OUT_EXPO }}
                     role="button"
@@ -422,10 +422,7 @@ export function MelodiesSection({
                         handleSelectMelody(mel.id, e as unknown as React.MouseEvent);
                       }
                     }}
-                    className={`py-1.5 px-2 flex items-center gap-2 min-h-[32px] rounded transition-opacity cursor-pointer`}
-                    style={{
-                      opacity: isActiveMelody ? 1 : 0.5,
-                    }}
+                    className="py-1.5 px-2 flex items-center gap-2 min-h-[32px] rounded transition-opacity cursor-pointer"
                   >
                     <span
                       className="w-1.5 h-1.5 rounded-full shrink-0"

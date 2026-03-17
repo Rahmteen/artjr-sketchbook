@@ -8,14 +8,16 @@ import { useDelayedLoading } from '../hooks/useDelayedLoading';
 import { ActivityRow } from '../components/ActivityRow';
 import { Select } from '../components/ui/Select';
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso);
+  if (d.toDateString() === new Date().toDateString()) return 'Today';
+  return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 const PAGE_SIZE = 20;
@@ -106,9 +108,10 @@ export function Timeline() {
       {showSkeleton ? (
         <div className="card overflow-hidden divide-y divide-border">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="px-6 py-4 flex gap-4">
-              <SkeletonLine width="100px" height="14px" />
-              <SkeletonLine width="60%" height="14px" />
+            <div key={i} className="px-4 py-2 flex gap-3">
+              <SkeletonLine width="44px" height="12px" />
+              <SkeletonLine width="62px" height="12px" />
+              <SkeletonLine width="60%" height="12px" />
             </div>
           ))}
         </div>
@@ -117,12 +120,13 @@ export function Timeline() {
           <FadeUp delay={0.06}>
             <div className="card overflow-hidden">
               {data.activities.length === 0 ? (
-                <p className="p-10 m-0 text-secondary text-sm text-center">No activity yet</p>
+                <p className="p-6 m-0 text-secondary text-xs text-center">No activity yet</p>
               ) : (
                 <StaggerList className="divide-y divide-border">
                   {data.activities.map((a) => (
-                    <StaggerRow key={a.id} className="px-6 py-4 flex flex-wrap items-center gap-4">
-                      <span className="text-xs text-tertiary shrink-0 tabular-nums w-[140px]">{formatDate(a.createdAt)}</span>
+                    <StaggerRow key={a.id} className="px-4 py-2 flex items-center gap-3">
+                      <span className="text-[11px] text-tertiary shrink-0 tabular-nums whitespace-nowrap w-[44px]">{formatDateLabel(a.createdAt)}</span>
+                      <span className="text-[11px] text-tertiary shrink-0 tabular-nums whitespace-nowrap w-[62px]">{formatTime(a.createdAt)}</span>
                       <ActivityRow activity={a} />
                     </StaggerRow>
                   ))}
